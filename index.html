@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a1a3e" />
+  <title>UiPath Fusion — Public Choice Award</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body style="min-height:100vh;background:#0f172a;color:#f8fafc;margin:0;font-family:system-ui,sans-serif;">
+  <noscript style="display:block;padding:2rem;text-align:center;">Enable JavaScript to use the voting app.</noscript>
+  <nav class="navbar">
+    <div class="nav-content container">
+      <a href="#/vote" class="logo-text">UiPath Fusion</a>
+      <div class="nav-links">
+        <a href="#/vote" class="nav-link" data-route="vote">Vote</a>
+        <a href="#/results" class="nav-link" data-route="results">Results</a>
+        <a href="#/admin" class="nav-link admin-link" data-route="admin">Admin</a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="app" class="main-content">
+    <!-- Routes render here -->
+  </main>
+
+  <!-- Toast for messages -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <!-- Video modal -->
+  <div id="video-modal" class="modal" role="dialog" aria-modal="true" aria-label="Video" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-content modal-video">
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <div id="video-container"></div>
+    </div>
+  </div>
+
+  <!-- Admin login modal -->
+  <div id="admin-login-modal" class="modal" role="dialog" aria-modal="true" aria-label="Admin login" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-content">
+      <h2>Admin access</h2>
+      <label for="admin-password">Password</label>
+      <input type="password" id="admin-password" placeholder="Enter password" autocomplete="current-password" />
+      <button type="button" id="admin-login-btn" class="btn btn-primary">Enter</button>
+    </div>
+  </div>
+
+  <!-- Project form modal (Add / Edit) -->
+  <div id="project-form-modal" class="modal" role="dialog" aria-modal="true" aria-label="Project form" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-content modal-form">
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <h2 id="project-form-title">Project</h2>
+      <form id="project-form">
+        <input type="hidden" id="project-form-id" value="" />
+        <label for="project-form-name">Name</label>
+        <input type="text" id="project-form-name" name="name" required placeholder="Project name" />
+        <label for="project-form-team">Team</label>
+        <input type="text" id="project-form-team" name="team" placeholder="Team name" />
+        <label for="project-form-description">Description</label>
+        <textarea id="project-form-description" name="description" placeholder="Short description"></textarea>
+        <label for="project-form-videoUrl">Video URL (YouTube, Vimeo, or MP4)</label>
+        <input type="url" id="project-form-videoUrl" name="videoUrl" placeholder="https://..." />
+        <fieldset class="thumbnail-fieldset">
+          <legend>Thumbnail / banner</legend>
+          <div class="thumbnail-radios">
+            <label><input type="radio" id="project-form-thumb-type-url" name="thumbType" value="url" checked /> URL</label>
+            <label><input type="radio" id="project-form-thumb-type-file" name="thumbType" value="file" /> Upload file</label>
+          </div>
+          <div id="thumb-url-wrap" class="thumbnail-option">
+            <label for="project-form-thumbnailUrl">Image URL</label>
+            <input type="url" id="project-form-thumbnailUrl" name="thumbnailUrl" placeholder="https://..." />
+          </div>
+          <div id="thumb-file-wrap" class="thumbnail-option" style="display: none;">
+            <label for="project-form-thumbnailFile">Choose image</label>
+            <input type="file" id="project-form-thumbnailFile" name="thumbnailFile" accept="image/*" />
+          </div>
+          <input type="hidden" id="project-form-thumbnailDataUrl" name="thumbnailDataUrl" value="" />
+        </fieldset>
+        <div class="modal-form-actions">
+          <button type="button" id="project-form-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="project-form-save" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

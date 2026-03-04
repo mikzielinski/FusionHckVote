@@ -1,0 +1,947 @@
+(function () {
+  'use strict';
+
+  if (typeof window.FUSION_VOTE_CONFIG === 'undefined') {
+    window.FUSION_VOTE_CONFIG = { firebase: {}, adminPassword: 'admin' };
+  }
+
+  const CONFIG = window.FUSION_VOTE_CONFIG;
+  const useLiveOnly = CONFIG.useMock === false;
+  const STORAGE_KEY = 'voterId'; // device ID – one per browser/device, max 2 votes per device
+  const VIEWED_KEY = 'fusionViewedProjects';
+  const MOCK_VOTES_KEY = 'fusionMockVotes'; // when no Firebase: persist selected projectIds here
+  const VOTING_ENABLED_KEY = 'fusionVotingEnabled'; // when no Firebase: admin toggle
+  const MAX_VOTES = 2;
+  const ADMIN_KEY = 'fusionAdminUnlocked';
+  const CONFIG_DOC = 'app';
+
+  let db = null;
+  let adminUnlocked = sessionStorage.getItem(ADMIN_KEY) === '1';
+  let votingEnabled = true;
+
+  function getVoterId() {
+    try {
+      var id = localStorage.getItem(STORAGE_KEY);
+      if (!id) {
+        id = 'v_' + (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2) + Date.now().toString(36));
+        localStorage.setItem(STORAGE_KEY, id);
+      }
+      return id;
+    } catch (e) {
+      return 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+
+  function initFirebase() {
+    if (!CONFIG.firebase || !CONFIG.firebase.apiKey || CONFIG.firebase.apiKey === 'YOUR_API_KEY') {
+      return null;
+    }
+    if (typeof firebase === 'undefined') return null;
+    try {
+      firebase.initializeApp(CONFIG.firebase);
+      return firebase.firestore();
+    } catch (e) {
+      console.warn('Firebase init failed', e);
+      return null;
+    }
+  }
+
+  try {
+    db = initFirebase();
+  } catch (e) {
+    console.warn('Firebase init error:', e);
+    db = null;
+  }
+
+  function loadVotingConfig() {
+    if (!db) {
+      votingEnabled = localStorage.getItem(VOTING_ENABLED_KEY) !== 'false';
+      return Promise.resolve();
+    }
+    return db.collection('config').doc(CONFIG_DOC).get()
+      .then(doc => { votingEnabled = doc.exists && doc.data().votingEnabled !== false; })
+      .catch(() => { votingEnabled = true; });
+  }
+
+  function setVotingEnabled(enabled) {
+    votingEnabled = enabled;
+    if (!db) {
+      localStorage.setItem(VOTING_ENABLED_KEY, enabled ? 'true' : 'false');
+      return Promise.resolve();
+    }
+    return db.collection('config').doc(CONFIG_DOC).set({ votingEnabled: enabled }, { merge: true });
+  }
+
+  const router = {
+    routes: {},
+    current: '',
+    init() {
+      const go = () => {
+        const hash = window.location.hash.slice(1) || '/vote';
+        const path = hash.startsWith('/') ? hash : '/' + hash;
+        const base = path.split('?')[0];
+        this.current = base;
+        const fn = this.routes[base] || this.routes['/vote'];
+        if (fn) fn();
+        document.querySelectorAll('.nav-link[data-route]').forEach(a => {
+          a.classList.toggle('active', a.getAttribute('href') === '#' + base);
+        });
+      };
+      window.addEventListener('hashchange', go);
+      go();
+    },
+    on(path, fn) {
+      this.routes[path] = fn;
+    }
+  };
+
+  function showToast(msg, type) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'toast visible ' + (type || '');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('visible'), 3500);
+  }
+
+  function render(el, html) {
+    if (typeof el === 'string') el = document.querySelector(el);
+    if (el) el.innerHTML = html;
+  }
+
+  function getAppEl() {
+    return document.getElementById('app');
+  }
+
+  // ---------- Mock projects (when Firebase not configured or empty) ----------
+  const MOCK_PROJECTS = [
+    {
+      id: 'mock-1',
+      name: 'AI Payroll Agent',
+      team: 'Automation Crew',
+      description: 'Intelligent agent that processes timesheets, calculates pay and generates reports. Integrates with HR systems and supports multiple countries.',
+      thumbnailUrl: 'https://picsum.photos/seed/payroll1/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    },
+    {
+      id: 'mock-2',
+      name: 'Document Intelligence Pipeline',
+      team: 'Data Ninjas',
+      description: 'End-to-end pipeline for invoice and contract extraction using AI. Outputs structured data ready for ERP and compliance checks.',
+      thumbnailUrl: 'https://picsum.photos/seed/docpipe2/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    },
+    {
+      id: 'mock-3',
+      name: 'Customer Support Co-pilot',
+      team: 'Support Heroes',
+      description: 'Agent that reads tickets, suggests replies and escalates when needed. Reduces handling time and keeps satisfaction high.',
+      thumbnailUrl: 'https://picsum.photos/seed/support3/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    },
+    {
+      id: 'mock-4',
+      name: 'Procurement Assistant',
+      team: 'ProcureBot',
+      description: 'Automates RFQ creation, vendor comparison and purchase order approval. Connects to SAP and Coupa.',
+      thumbnailUrl: 'https://picsum.photos/seed/procure4/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    },
+    {
+      id: 'mock-5',
+      name: 'IT Onboarding Bot',
+      team: 'DevOps League',
+      description: 'Provisions accounts, installs software and runs checklists for new joiners. Fully auditable and role-based.',
+      thumbnailUrl: 'https://picsum.photos/seed/onboard5/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    },
+    {
+      id: 'mock-6',
+      name: 'Compliance Guardian',
+      team: 'Risk & Control',
+      description: 'Monitors policies, runs controls and generates audit trails. Alerts when exceptions or deadlines are at risk.',
+      thumbnailUrl: 'https://picsum.photos/seed/compliance6/400/225',
+      videoUrl: 'https://www.youtube.com/watch?v=l3L0n-4LpRc',
+      isActive: true
+    }
+  ];
+
+  // ---------- Vote page ----------
+  let voteState = { projects: [], myVotes: [], selected: new Set() };
+
+  function loadProjects() {
+    if (!db) {
+      voteState.projects = useLiveOnly ? [] : MOCK_PROJECTS.slice();
+      return Promise.resolve();
+    }
+    return db.collection('projects')
+      .get()
+      .then(snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const fromDb = list
+          .filter(p => p.isActive !== false)
+          .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+        voteState.projects = fromDb.length > 0 ? fromDb : (useLiveOnly ? [] : MOCK_PROJECTS.slice());
+      })
+      .catch(() => { voteState.projects = useLiveOnly ? [] : MOCK_PROJECTS.slice(); });
+  }
+
+  function loadMyVotes() {
+    if (!db) {
+      if (useLiveOnly) {
+        voteState.myVotes = [];
+        voteState.selected = new Set();
+        return Promise.resolve();
+      }
+      try {
+        const saved = JSON.parse(localStorage.getItem(MOCK_VOTES_KEY) || '[]');
+        const ids = Array.isArray(saved) ? saved.slice(0, MAX_VOTES) : [];
+        voteState.selected = new Set(ids);
+        voteState.myVotes = ids.map(projectId => ({ projectId }));
+      } catch (_) {
+        voteState.myVotes = [];
+        voteState.selected = new Set();
+      }
+      return Promise.resolve();
+    }
+    const voterId = getVoterId();
+    return db.collection('votes')
+      .where('voterId', '==', voterId)
+      .get()
+      .then(snap => {
+        voteState.myVotes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        voteState.selected = new Set(voteState.myVotes.map(v => v.projectId));
+      })
+      .catch(() => {
+        voteState.myVotes = [];
+        voteState.selected = new Set();
+      });
+  }
+
+  function recordView(projectId) {
+    if (!db) return;
+    const voterId = getVoterId();
+    let viewed = [];
+    try {
+      viewed = JSON.parse(sessionStorage.getItem(VIEWED_KEY) || '[]');
+    } catch (_) {}
+    if (viewed.includes(projectId)) return;
+    viewed.push(projectId);
+    sessionStorage.setItem(VIEWED_KEY, JSON.stringify(viewed));
+    db.collection('views').add({
+      viewId: 'view_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+      projectId,
+      voterId,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(() => {});
+  }
+
+  function toggleVote(projectId) {
+    if (voteState.selected.has(projectId)) {
+      voteState.selected.delete(projectId);
+      renderVotePage();
+      removeVoteInFirestore(projectId);
+      return;
+    }
+    if (voteState.selected.size >= MAX_VOTES) {
+      showToast('You can vote for a maximum of 2 projects. Remove one to select another.', 'error');
+      document.getElementById('vote-warning')?.classList.add('visible');
+      return;
+    }
+    document.getElementById('vote-warning')?.classList.remove('visible');
+    voteState.selected.add(projectId);
+    renderVotePage();
+    addVoteInFirestore(projectId);
+  }
+
+  function addVoteInFirestore(projectId) {
+    if (!db) {
+      if (!useLiveOnly) localStorage.setItem(MOCK_VOTES_KEY, JSON.stringify([...voteState.selected]));
+      else showToast('Connect Firebase to save votes.', 'error');
+      return;
+    }
+    const voterId = getVoterId();
+    db.collection('votes').add({
+      voteId: 'vote_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+      projectId,
+      voterId,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => loadMyVotes().then(() => renderVotePage()))
+      .catch(() => { voteState.selected.delete(projectId); renderVotePage(); showToast('Failed to save vote', 'error'); });
+  }
+
+  function removeVoteInFirestore(projectId) {
+    if (!db) {
+      if (!useLiveOnly) localStorage.setItem(MOCK_VOTES_KEY, JSON.stringify([...voteState.selected]));
+      renderVotePage();
+      return;
+    }
+    const voterId = getVoterId();
+    db.collection('votes')
+      .where('voterId', '==', voterId)
+      .where('projectId', '==', projectId)
+      .get()
+      .then(snap => {
+        const batch = db.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        return batch.commit();
+      })
+      .then(() => loadMyVotes().then(() => renderVotePage()))
+      .catch(() => { voteState.selected.add(projectId); renderVotePage(); showToast('Failed to remove vote', 'error'); });
+  }
+
+  function submitVotes() {
+    if (voteState.selected.size === 0) {
+      showToast('Select at least one project to vote.', 'error');
+      return;
+    }
+    showToast('Votes saved. You can change them anytime.', 'success');
+  }
+
+  function openVideoModal(url) {
+    if (!url) return;
+    const container = document.getElementById('video-container');
+    const modal = document.getElementById('video-modal');
+    if (!container || !modal) return;
+    let embed = '';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const id = (url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/) || [])[1] || '';
+      embed = '<iframe src="https://www.youtube.com/embed/' + id + '?rel=0" allowfullscreen></iframe>';
+    } else if (url.includes('vimeo.com')) {
+      const id = (url.match(/vimeo\.com\/(?:video\/)?(\d+)/) || [])[1] || '';
+      embed = '<iframe src="https://player.vimeo.com/video/' + id + '" allowfullscreen></iframe>';
+    } else if (url.match(/\.(mp4|webm|ogg)(\?|$)/i)) {
+      embed = '<video controls src="' + url + '"></video>';
+    } else {
+      embed = '<p>Unsupported video URL</p>';
+    }
+    container.innerHTML = embed;
+    modal.hidden = false;
+  }
+
+  function initVideoModal() {
+    const modal = document.getElementById('video-modal');
+    if (!modal) return;
+    const close = () => {
+      modal.hidden = true;
+      document.getElementById('video-container').innerHTML = '';
+    };
+    modal.querySelectorAll('[data-close-modal]').forEach(el => el.addEventListener('click', close));
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  }
+
+  function renderVotePage() {
+    const used = voteState.selected.size;
+    const counterClass = used === MAX_VOTES ? 'vote-counter at-limit' : 'vote-counter';
+    const votingClosed = !votingEnabled;
+    const warning = document.getElementById('vote-warning');
+    if (warning) warning.classList.toggle('visible', false);
+
+    const cards = voteState.projects.map(p => {
+      const voted = voteState.selected.has(p.id);
+      const desc = (p.description || '').slice(0, 120) + ((p.description || '').length > 120 ? '…' : '');
+      const thumbSrc = p.thumbnailDataUrl || p.thumbnailUrl || '';
+      const thumbHtml = thumbSrc
+        ? '<div class="project-card-thumb"><img src="' + escapeAttr(thumbSrc) + '" alt="" loading="lazy" /></div>'
+        : '';
+      const videoBtn = p.videoUrl
+        ? '<button type="button" class="watch-video" data-video="' + escapeAttr(p.videoUrl) + '">Watch demo</button>'
+        : '';
+      const cardDisabled = votingClosed || p.isActive === false;
+      return (
+        '<article class="project-card' + (voted ? ' voted' : '') + (cardDisabled ? ' disabled' : '') + (votingClosed ? ' voting-closed' : '') + '" data-project-id="' + escapeAttr(p.id) + '" data-project-name="' + escapeAttr(p.name || '') + '">' +
+          thumbHtml +
+          '<div class="project-card-body">' +
+          '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
+          (p.team ? '<div class="team">' + escapeHtml(p.team) + '</div>' : '') +
+          (desc ? '<div class="description">' + escapeHtml(desc) + '</div>' : '') +
+          (videoBtn ? '<div>' + videoBtn + '</div>' : '') +
+          '<div class="badge">' + (voted ? 'Voted' : '') + '</div>' +
+          '</div>' +
+        '</article>'
+      );
+    }).join('');
+
+    const html =
+      '<div class="vote-page">' +
+        '<div class="vote-banner-wrap">' +
+          '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="vote-banner-hero" />' +
+        '</div>' +
+        '<div class="container">' +
+        '<header class="vote-header">' +
+          (votingClosed ? '<div class="vote-closed-banner"><p>Voting is currently closed.</p><p class="vote-closed-hint">Organisers have disabled voting. Check back later.</p></div>' : '') +
+          '<h1>UiPath Fusion</h1>' +
+          '<p class="subtitle">Public Choice Award</p>' +
+          '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Vote for up to 2 projects. You can change your vote anytime.') + '</p>' +
+          (votingClosed ? '' : '<div class="' + counterClass + '" id="vote-counter">Votes used: ' + used + ' / ' + MAX_VOTES + '</div>') +
+          (votingClosed ? '' : '<p class="vote-warning" id="vote-warning">You can vote for a maximum of 2 projects. Remove one to select another.</p>') +
+        '</header>' +
+        '<div class="projects-list" id="projects-list">' + (cards || (useLiveOnly && !db ? '<p class="empty-state">Connect Firebase to load projects.</p>' : '<p class="empty-state">No projects yet. Check back later.</p>')) + '</div>' +
+        '</div>' +
+        (votingClosed ? '' : '<div class="submit-votes-bar' + (used > 0 ? ' submit-votes-bar--has-votes' : '') + '" id="submit-votes-bar">' +
+          '<div class="submit-votes-bar-inner">' +
+            '<div class="submit-votes-counter" id="submit-votes-counter">Votes: ' + used + ' / ' + MAX_VOTES + '</div>' +
+            '<p class="submit-votes-cta">' + (used > 0 ? 'Tap below to confirm your votes' : 'Choose up to 2 projects, then confirm') + '</p>' +
+            '<button type="button" class="btn btn-primary btn-submit-votes" id="submit-votes-btn">Submit my votes</button>' +
+          '</div>' +
+        '</div>') +
+      '</div>';
+    render(getAppEl(), html);
+
+    const list = document.getElementById('projects-list');
+    if (list) {
+      list.addEventListener('click', e => {
+        const card = e.target.closest('.project-card');
+        if (!card || card.classList.contains('disabled')) return;
+        if (e.target.classList.contains('watch-video')) {
+          e.preventDefault();
+          e.stopPropagation();
+          openVideoModal(e.target.getAttribute('data-video'));
+          return;
+        }
+        const projectId = card.getAttribute('data-project-id');
+        toggleVote(projectId);
+      });
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          const card = entry.target;
+          const id = card.getAttribute('data-project-id');
+          if (id) recordView(id);
+        });
+      }, { threshold: 0.5 });
+      list.querySelectorAll('.project-card').forEach(el => observer.observe(el));
+    }
+    document.getElementById('submit-votes-btn')?.addEventListener('click', submitVotes);
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+  function escapeAttr(s) {
+    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // ---------- Results page ----------
+  let resultsChart = null;
+
+  // Mock vote/view counts for demo (used when no Firebase or empty)
+  function getMockStats() {
+    const ids = MOCK_PROJECTS.map(p => p.id);
+    const voteCounts = {};
+    const viewCounts = {};
+    const uniqueDevicesByProject = {};
+    ids.forEach((id, i) => {
+      voteCounts[id] = [82, 67, 54, 41, 38, 28][i] || 0;
+      viewCounts[id] = [140, 120, 95, 88, 80, 65][i] || 0;
+      uniqueDevicesByProject[id] = [58, 48, 42, 35, 32, 25][i] || 0; // mock unique devices per project
+    });
+    const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+    const uniqueDevicesTotal = 120; // mock
+    return { voteCounts, viewCounts, uniqueDevicesByProject, uniqueDevicesTotal, totalVotes };
+  }
+
+  function loadResults() {
+    if (!db) {
+      if (useLiveOnly) {
+        renderResultsPage({ projects: [], voteCounts: {}, viewCounts: {} });
+        return;
+      }
+      const { voteCounts, viewCounts } = getMockStats();
+      try {
+        const myVotes = JSON.parse(localStorage.getItem(MOCK_VOTES_KEY) || '[]');
+        if (Array.isArray(myVotes)) {
+          myVotes.forEach(function (pid) {
+            voteCounts[pid] = (voteCounts[pid] || 0) + 1;
+          });
+        }
+      } catch (e) { /* ignore */ }
+      renderResultsPage({ projects: MOCK_PROJECTS.slice(), voteCounts, viewCounts });
+      return;
+    }
+    Promise.all([
+      db.collection('projects').get(),
+      db.collection('votes').get(),
+      db.collection('views').get()
+    ]).then(([projSnap, voteSnap, viewSnap]) => {
+      const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const voteCounts = {};
+      voteSnap.docs.forEach(d => { const p = d.data().projectId; voteCounts[p] = (voteCounts[p] || 0) + 1; });
+      const viewCounts = {};
+      viewSnap.docs.forEach(d => { const p = d.data().projectId; viewCounts[p] = (viewCounts[p] || 0) + 1; });
+      const hasProjects = projects.filter(p => p.isActive !== false).length > 0;
+      if (!hasProjects) {
+        renderResultsPage(useLiveOnly ? { projects: [], voteCounts: {}, viewCounts: {} } : { projects: MOCK_PROJECTS.slice(), voteCounts: getMockStats().voteCounts, viewCounts: getMockStats().viewCounts });
+      } else {
+        renderResultsPage({ projects, voteCounts, viewCounts });
+      }
+    }).catch(() => {
+      if (useLiveOnly) renderResultsPage({ projects: [], voteCounts: {}, viewCounts: {} });
+      else {
+        const mock = getMockStats();
+        renderResultsPage({ projects: MOCK_PROJECTS.slice(), voteCounts: mock.voteCounts, viewCounts: mock.viewCounts });
+      }
+    });
+  }
+
+  function renderResultsPage(data) {
+    const { projects, voteCounts, viewCounts } = data;
+    const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+
+    const items = projects.filter(p => p.isActive !== false).map(p => {
+      const votes = voteCounts[p.id] || 0;
+      const views = viewCounts[p.id] || 0;
+      const pct = totalVotes ? Math.round((votes / totalVotes) * 100) : 0;
+      const engagement = views ? Math.round((votes / views) * 100) : 0;
+      return {
+        ...p,
+        votes,
+        views,
+        pct,
+        engagement
+      };
+    }).sort((a, b) => b.votes - a.votes);
+
+    const listHtml = items.map(p =>
+      '<div class="result-item">' +
+        '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
+        '<div class="stats">Votes: ' + p.votes + ' — Views: ' + p.views + ' — Vote rate: ' + p.pct + '% — Engagement: ' + p.engagement + '%</div>' +
+        '<div class="bar-wrap"><div class="bar" style="width:' + (totalVotes ? (p.votes / totalVotes * 100) : 0) + '%"></div></div>' +
+      '</div>'
+    ).join('');
+
+    const totalVotesNum = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+    const isMock = !db;
+    const html =
+      '<div class="results-page">' +
+        '<div class="results-banner-wrap">' +
+          '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="results-banner" />' +
+        '</div>' +
+        '<div class="container">' +
+        '<div class="results-header-row">' +
+          '<h1>Live results</h1>' +
+          '<button type="button" class="btn btn-secondary btn-refresh-results" id="btn-refresh-results">Refresh</button>' +
+        '</div>' +
+        (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
+        (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
+        '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
+        '<div class="chart-container"><canvas id="results-chart"></canvas></div>' +
+        '</div>' +
+      '</div>';
+    render(getAppEl(), html);
+
+    const ctx = document.getElementById('results-chart')?.getContext('2d');
+    if (ctx && typeof Chart !== 'undefined') {
+      if (resultsChart) resultsChart.destroy();
+      resultsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: items.map(p => (p.name || 'Unnamed').slice(0, 20)),
+          datasets: [{ label: 'Votes', data: items.map(p => p.votes), backgroundColor: 'rgba(255, 107, 53, 0.8)', borderColor: '#ff6b35', borderWidth: 1 }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { color: '#cbd5e1' } },
+            x: { ticks: { color: '#cbd5e1', maxRotation: 45 } }
+          }
+        }
+      });
+    }
+  }
+
+  // ---------- Admin (mock state when no Firebase) ----------
+  let adminMockProjects = [];
+  let adminMockStats = { voteCounts: {}, viewCounts: {} };
+
+  function checkAdminPassword(pwd) {
+    return pwd === (CONFIG.adminPassword || 'admin');
+  }
+
+  function showAdminLogin(cb) {
+    const modal = document.getElementById('admin-login-modal');
+    const input = document.getElementById('admin-password');
+    const btn = document.getElementById('admin-login-btn');
+    if (!modal || !input || !btn) return;
+    modal.hidden = false;
+    input.value = '';
+    input.focus();
+    const tryLogin = () => {
+      if (checkAdminPassword(input.value)) {
+        sessionStorage.setItem(ADMIN_KEY, '1');
+        adminUnlocked = true;
+        modal.hidden = true;
+        if (cb) cb();
+      } else {
+        showToast('Wrong password', 'error');
+      }
+    };
+    btn.onclick = tryLogin;
+    input.onkeydown = e => { if (e.key === 'Enter') tryLogin(); };
+    modal.querySelectorAll('[data-close-modal]').forEach(el => el.addEventListener('click', () => { modal.hidden = true; }));
+  }
+
+  function loadAdminData() {
+    if (!db) {
+      if (useLiveOnly) {
+        renderAdminPage({ projects: [], voteCounts: {}, viewCounts: {}, uniqueDevicesByProject: {}, uniqueDevicesTotal: 0, totalVotes: 0, liveOnlyNoDb: true });
+        return;
+      }
+      if (adminMockProjects.length === 0) {
+        MOCK_PROJECTS.forEach(p => adminMockProjects.push({ ...p }));
+        adminMockStats = getMockStats();
+      }
+      const mock = getMockStats();
+      renderAdminPage({
+        projects: adminMockProjects,
+        voteCounts: adminMockStats.voteCounts,
+        viewCounts: adminMockStats.viewCounts,
+        uniqueDevicesByProject: mock.uniqueDevicesByProject || {},
+        uniqueDevicesTotal: mock.uniqueDevicesTotal || 0,
+        totalVotes: mock.totalVotes || 0
+      });
+      return;
+    }
+    Promise.all([
+      db.collection('projects').get(),
+      db.collection('votes').get(),
+      db.collection('views').get()
+    ]).then(([projSnap, voteSnap, viewSnap]) => {
+      const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const voteCounts = {};
+      const uniqueDevicesByProject = {};
+      const allVoterIds = new Set();
+      voteSnap.docs.forEach(d => {
+        const { projectId, voterId } = d.data();
+        voteCounts[projectId] = (voteCounts[projectId] || 0) + 1;
+        if (!uniqueDevicesByProject[projectId]) uniqueDevicesByProject[projectId] = new Set();
+        uniqueDevicesByProject[projectId].add(voterId);
+        allVoterIds.add(voterId);
+      });
+      const viewCounts = {};
+      viewSnap.docs.forEach(d => { const p = d.data().projectId; viewCounts[p] = (viewCounts[p] || 0) + 1; });
+      const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+      const uniqueDevicesByProjectSizes = {};
+      Object.keys(uniqueDevicesByProject).forEach(pid => { uniqueDevicesByProjectSizes[pid] = uniqueDevicesByProject[pid].size; });
+      renderAdminPage({
+        projects,
+        voteCounts,
+        viewCounts,
+        uniqueDevicesByProject: uniqueDevicesByProjectSizes,
+        uniqueDevicesTotal: allVoterIds.size,
+        totalVotes
+      });
+    }).catch(() => renderAdminPage({ projects: [], voteCounts: {}, viewCounts: {}, uniqueDevicesByProject: {}, uniqueDevicesTotal: 0, totalVotes: 0 }));
+  }
+
+  function renderAdminPage(data) {
+    const { projects, voteCounts, viewCounts, uniqueDevicesByProject = {}, uniqueDevicesTotal = 0, totalVotes = 0, liveOnlyNoDb = false } = data;
+    const rows = projects.map(p => {
+      const votes = voteCounts[p.id] || 0;
+      const views = viewCounts[p.id] || 0;
+      const uniqueDevices = uniqueDevicesByProject[p.id] != null ? uniqueDevicesByProject[p.id] : votes;
+      return '<tr>' +
+        '<td>' + escapeHtml(p.name || '') + '</td>' +
+        '<td>' + escapeHtml(p.team || '') + '</td>' +
+        '<td>' + votes + '</td>' +
+        '<td>' + uniqueDevices + '</td>' +
+        '<td>' + views + '</td>' +
+        '<td class="admin-actions">' +
+          '<button type="button" class="btn btn-secondary edit-project" data-id="' + escapeAttr(p.id) + '">Edit</button>' +
+          '<button type="button" class="btn btn-secondary toggle-project" data-id="' + escapeAttr(p.id) + '" data-active="' + (p.isActive !== false) + '">' + (p.isActive !== false ? 'Disable' : 'Enable') + '</button>' +
+          '<button type="button" class="btn btn-secondary delete-project" data-id="' + escapeAttr(p.id) + '">Delete</button>' +
+        '</td></tr>';
+    }).join('');
+
+    const html =
+      '<div class="admin-page container">' +
+        '<h1>Admin dashboard</h1>' +
+        (liveOnlyNoDb ? '<p class="results-mock-hint">Live mode: connect Firebase to manage projects and see stats.</p>' : '') +
+        '<div class="admin-section admin-voting-toggle">' +
+          '<h2>Voting</h2>' +
+          '<p class="admin-voting-status">Voting is <strong>' + (votingEnabled ? 'enabled' : 'disabled') + '</strong>. Participants ' + (votingEnabled ? 'can' : 'cannot') + ' submit votes.</p>' +
+          '<button type="button" class="btn ' + (votingEnabled ? 'btn-secondary' : 'btn-primary') + ' admin-toggle-voting" id="admin-toggle-voting">' + (votingEnabled ? 'Disable voting' : 'Enable voting') + '</button>' +
+        '</div>' +
+        '<div class="admin-section admin-stats-summary">' +
+          '<p class="admin-stats-line"><strong>Unique devices (voters):</strong> ' + uniqueDevicesTotal + ' &nbsp;|&nbsp; <strong>Total votes:</strong> ' + totalVotes + '</p>' +
+          '<p class="admin-stats-hint">Each device can vote for up to 2 projects. Votes are tied to device ID (localStorage).</p>' +
+        '</div>' +
+        '<div class="admin-section">' +
+          '<h2>Projects</h2>' +
+          '<div class="admin-table-wrap"><table class="admin-table">' +
+            '<thead><tr><th>Project name</th><th>Team</th><th>Votes</th><th>Unique devices</th><th>Views</th><th>Actions</th></tr></thead>' +
+            '<tbody id="admin-tbody">' + rows + '</tbody>' +
+          '</table></div>' +
+        '</div>' +
+        '<div class="admin-section">' +
+          '<button type="button" class="btn btn-primary" id="admin-add-project-btn">Add project</button>' +
+        '</div>' +
+      '</div>';
+    render(getAppEl(), html);
+
+    document.getElementById('admin-add-project-btn')?.addEventListener('click', () => {
+      openProjectFormModal('add');
+    });
+
+    document.getElementById('admin-toggle-voting')?.addEventListener('click', () => {
+      setVotingEnabled(!votingEnabled).then(() => {
+        showToast(votingEnabled ? 'Voting enabled' : 'Voting disabled');
+        loadAdminData();
+      }).catch(() => showToast('Failed to update', 'error'));
+    });
+
+    document.getElementById('admin-tbody')?.addEventListener('click', (e) => {
+      const id = e.target.closest('[data-id]')?.getAttribute('data-id');
+      if (!id) return;
+      const doc = projects.find(p => p.id === id);
+
+      if (e.target.classList.contains('delete-project')) {
+        if (!confirm('Delete this project?')) return;
+        if (db) {
+          db.collection('projects').doc(id).delete().then(() => { showToast('Deleted'); loadAdminData(); }).catch(() => showToast('Failed', 'error'));
+        } else {
+          const idx = adminMockProjects.findIndex(p => p.id === id);
+          if (idx !== -1) adminMockProjects.splice(idx, 1);
+          delete adminMockStats.voteCounts[id];
+          delete adminMockStats.viewCounts[id];
+          showToast('Deleted');
+          loadAdminData();
+        }
+        return;
+      }
+      if (e.target.classList.contains('toggle-project')) {
+        if (!doc) return;
+        const isActive = doc.isActive !== false;
+        if (db) {
+          db.collection('projects').doc(id).update({ isActive: !isActive }).then(() => { showToast(isActive ? 'Disabled' : 'Enabled'); loadAdminData(); }).catch(() => showToast('Failed', 'error'));
+        } else {
+          doc.isActive = isActive;
+          showToast(isActive ? 'Disabled' : 'Enabled');
+          loadAdminData();
+        }
+        return;
+      }
+      if (e.target.classList.contains('edit-project')) {
+        if (!doc) return;
+        openProjectFormModal('edit', doc);
+      }
+    });
+  }
+
+  function openProjectFormModal(mode, project) {
+    const modal = document.getElementById('project-form-modal');
+    const titleEl = document.getElementById('project-form-title');
+    const form = document.getElementById('project-form');
+    const idInput = document.getElementById('project-form-id');
+    const thumbUrlRadio = document.getElementById('project-form-thumb-type-url');
+    const thumbFileRadio = document.getElementById('project-form-thumb-type-file');
+    const thumbUrlInput = document.getElementById('project-form-thumbnailUrl');
+    const thumbFileInput = document.getElementById('project-form-thumbnailFile');
+    const thumbDataInput = document.getElementById('project-form-thumbnailDataUrl');
+    if (!modal || !form) return;
+    if (mode === 'edit' && project) {
+      titleEl.textContent = 'Edit project';
+      idInput.value = project.id;
+      document.getElementById('project-form-name').value = project.name || '';
+      document.getElementById('project-form-team').value = project.team || '';
+      document.getElementById('project-form-description').value = project.description || '';
+      document.getElementById('project-form-videoUrl').value = project.videoUrl || '';
+      if (project.thumbnailDataUrl) {
+        thumbFileRadio.checked = true;
+        thumbDataInput.value = project.thumbnailDataUrl;
+        thumbUrlInput.value = '';
+        thumbFileInput.value = '';
+        toggleThumbInputs('file');
+      } else {
+        thumbUrlRadio.checked = true;
+        thumbUrlInput.value = project.thumbnailUrl || '';
+        thumbDataInput.value = '';
+        thumbFileInput.value = '';
+        toggleThumbInputs('url');
+      }
+    } else {
+      titleEl.textContent = 'Add project';
+      idInput.value = '';
+      form.reset();
+      idInput.value = '';
+      thumbDataInput.value = '';
+      toggleThumbInputs('url');
+    }
+    modal.hidden = false;
+    document.getElementById('project-form-name')?.focus();
+  }
+
+  function closeProjectFormModal() {
+    const modal = document.getElementById('project-form-modal');
+    if (modal) modal.hidden = true;
+  }
+
+  function toggleThumbInputs(type) {
+    const urlWrap = document.getElementById('thumb-url-wrap');
+    const fileWrap = document.getElementById('thumb-file-wrap');
+    if (urlWrap) urlWrap.style.display = type === 'url' ? '' : 'none';
+    if (fileWrap) fileWrap.style.display = type === 'file' ? '' : 'none';
+  }
+
+  function initProjectFormModal() {
+    const modal = document.getElementById('project-form-modal');
+    const form = document.getElementById('project-form');
+    if (!modal || !form) return;
+
+    function closeModal(e) {
+      if (e) e.preventDefault();
+      closeProjectFormModal();
+    }
+
+    document.getElementById('project-form-cancel')?.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) {
+      if (e.target.hasAttribute('data-close-modal') || e.target.closest('[data-close-modal]')) closeModal(e);
+    });
+
+    document.getElementById('project-form-thumb-type-url')?.addEventListener('change', function () { toggleThumbInputs('url'); });
+    document.getElementById('project-form-thumb-type-file')?.addEventListener('change', function () { toggleThumbInputs('file'); });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = document.getElementById('project-form-id').value.trim();
+      const name = document.getElementById('project-form-name').value.trim();
+      if (!name) { showToast('Name is required', 'error'); return; }
+      const thumbType = form.querySelector('input[name="thumbType"]:checked')?.value || 'url';
+      let thumbnailUrl = null;
+      let thumbnailDataUrl = null;
+      if (thumbType === 'file') {
+        const fileInput = document.getElementById('project-form-thumbnailFile');
+        const dataInput = document.getElementById('project-form-thumbnailDataUrl');
+        if (fileInput?.files?.length) {
+          const file = fileInput.files[0];
+          if (!file.type.startsWith('image/')) { showToast('Please choose an image file', 'error'); return; }
+          const reader = new FileReader();
+          reader.onload = function () {
+            thumbnailDataUrl = reader.result;
+            saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl);
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+        if (dataInput?.value) thumbnailDataUrl = dataInput.value;
+      } else {
+        thumbnailUrl = document.getElementById('project-form-thumbnailUrl').value.trim() || null;
+      }
+      saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl);
+    });
+
+    function saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl) {
+      if (useLiveOnly && !db) {
+        showToast('Connect Firebase to manage projects.', 'error');
+        return;
+      }
+      const data = {
+        name,
+        team: document.getElementById('project-form-team').value.trim(),
+        description: document.getElementById('project-form-description').value.trim(),
+        videoUrl: document.getElementById('project-form-videoUrl').value.trim() || null,
+        thumbnailUrl: thumbnailUrl || null,
+        thumbnailDataUrl: thumbnailDataUrl || null
+      };
+      if (id) {
+        if (db) {
+          db.collection('projects').doc(id).update(data).then(() => { showToast('Updated'); closeProjectFormModal(); loadAdminData(); }).catch(() => showToast('Failed', 'error'));
+        } else {
+          const proj = adminMockProjects.find(p => p.id === id);
+          if (proj) {
+            proj.name = data.name;
+            proj.team = data.team;
+            proj.description = data.description;
+            proj.videoUrl = data.videoUrl;
+            proj.thumbnailUrl = data.thumbnailUrl;
+            proj.thumbnailDataUrl = data.thumbnailDataUrl;
+          }
+          showToast('Updated');
+          closeProjectFormModal();
+          loadAdminData();
+        }
+      } else {
+        if (db) {
+          db.collection('projects').add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp(), isActive: true }).then(() => { showToast('Project added'); closeProjectFormModal(); loadAdminData(); }).catch(() => showToast('Failed to add', 'error'));
+        } else {
+          const newId = 'mock-' + Date.now();
+          adminMockProjects.push({ id: newId, ...data, isActive: true });
+          adminMockStats.voteCounts[newId] = 0;
+          adminMockStats.viewCounts[newId] = 0;
+          showToast('Project added');
+          closeProjectFormModal();
+          loadAdminData();
+        }
+      }
+    }
+  }
+
+  // ---------- Routes ----------
+  router.on('/vote', function () {
+    Promise.all([loadProjects(), loadMyVotes(), loadVotingConfig()])
+      .then(() => renderVotePage())
+      .catch(function (err) {
+        console.error('Vote page load error:', err);
+        renderVotePage();
+      });
+  });
+
+  router.on('/results', function () {
+    loadResults();
+  });
+
+  router.on('/admin', function () {
+    if (!adminUnlocked) {
+      showAdminLogin(() => {
+        document.querySelector('.nav-link.admin-link')?.classList.add('visible');
+        loadVotingConfig().then(loadAdminData);
+      });
+    } else {
+      loadVotingConfig().then(loadAdminData);
+    }
+  });
+
+  function initNavAdminLink() {
+    const adminLink = document.querySelector('a[href="#/admin"]');
+    if (adminLink) {
+      adminLink.classList.add('admin-link');
+      if (adminUnlocked) adminLink.classList.add('visible');
+    }
+  }
+
+  function boot() {
+    initVideoModal();
+    initProjectFormModal();
+    initNavAdminLink();
+    var appEl = document.getElementById('app');
+    if (appEl) {
+      appEl.addEventListener('click', function (e) {
+        var btn = e.target.id === 'btn-refresh-results' ? e.target : e.target.closest && e.target.closest('#btn-refresh-results');
+        if (btn) {
+          e.preventDefault();
+          showToast('Loading…');
+          loadResults();
+        }
+      });
+    }
+    if (!window.location.hash) window.location.hash = '/vote';
+    router.init();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
