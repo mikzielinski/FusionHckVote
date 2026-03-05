@@ -240,6 +240,15 @@ body > * {
   color: var(--text-secondary) !important;
 }
 
+.vote-closed-actions {
+  margin-top: 0.85rem;
+}
+
+.vote-closed-actions .btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+}
+
 /* Project cards */
 .projects-list {
   display: flex;

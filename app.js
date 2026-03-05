@@ -541,6 +541,9 @@
     const votingState = getVotingWindowState();
     const votingClosed = !votingState.allowed;
     const closedBanner = getVotingClosedBannerMessage();
+    const closedBannerAction = (votingState.reason === 'ended' && adminUnlocked)
+      ? '<div class="vote-closed-actions"><a href="#/results" class="btn btn-secondary">View winner podium</a></div>'
+      : '';
     const warning = document.getElementById('vote-warning');
     if (warning) warning.classList.toggle('visible', false);
 
@@ -579,7 +582,7 @@
         '</div>' +
         '<div class="container">' +
         '<header class="vote-header">' +
-          (votingClosed ? '<div class="vote-closed-banner"><p>' + escapeHtml(closedBanner.title) + '</p><p class="vote-closed-hint">' + escapeHtml(closedBanner.hint) + '</p></div>' : '') +
+          (votingClosed ? '<div class="vote-closed-banner"><p>' + escapeHtml(closedBanner.title) + '</p><p class="vote-closed-hint">' + escapeHtml(closedBanner.hint) + '</p>' + closedBannerAction + '</div>' : '') +
           '<h1>UiPath Fusion</h1>' +
           '<p class="subtitle">Public Choice Award</p>' +
           '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Vote for 1 project. You can change your vote anytime.') + '</p>' +
