@@ -673,6 +673,66 @@ body > * {
   color: var(--text-secondary);
 }
 
+.admin-schedule-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+}
+
+.admin-schedule-grid label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.admin-schedule-grid input {
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-primary);
+}
+
+.admin-schedule-actions {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admin-team-link-cell {
+  min-width: 180px;
+}
+
+.admin-team-link-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.admin-team-link-actions a {
+  color: var(--fusion-teal);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-team-link-actions a:hover {
+  color: var(--fusion-orange);
+}
+
+.admin-team-link-empty {
+  color: var(--text-secondary);
+}
+
+@media (min-width: 768px) {
+  .admin-schedule-grid {
+    grid-template-columns: auto 1fr auto 1fr;
+    align-items: center;
+    column-gap: 0.8rem;
+  }
+}
+
 .admin-stats-summary {
   margin-bottom: 1rem;
 }

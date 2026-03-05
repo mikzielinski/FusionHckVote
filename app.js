@@ -7,17 +7,22 @@
 
   const CONFIG = window.FUSION_VOTE_CONFIG;
   const useLiveOnly = CONFIG.useMock === false;
-  const STORAGE_KEY = 'voterId'; // device ID – one per browser/device, max 2 votes per device
+  const STORAGE_KEY = 'voterId'; // device ID – one per browser/device, max 1 vote per device
   const VIEWED_KEY = 'fusionViewedProjects';
   const MOCK_VOTES_KEY = 'fusionMockVotes'; // when no Firebase: persist selected projectIds here
   const VOTING_ENABLED_KEY = 'fusionVotingEnabled'; // when no Firebase: admin toggle
-  const MAX_VOTES = 2;
+  const VOTING_START_KEY = 'fusionVotingStartAt';
+  const VOTING_END_KEY = 'fusionVotingEndAt';
+  const MAX_VOTES = 1;
   const ADMIN_KEY = 'fusionAdminUnlocked';
   const CONFIG_DOC = 'app';
 
   let db = null;
   let adminUnlocked = sessionStorage.getItem(ADMIN_KEY) === '1';
   let votingEnabled = true;
+  let votingStartAtMs = null;
+  let votingEndAtMs = null;
+  let adminProjectsCache = [];
 
   function getVoterId() {
     try {
@@ -55,14 +60,176 @@
     db = null;
   }
 
+  function parseConfigDateValue(value) {
+    if (value == null || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    if (value && typeof value.toMillis === 'function') return value.toMillis();
+    if (value && typeof value.seconds === 'number') return (value.seconds * 1000) + Math.floor((value.nanoseconds || 0) / 1000000);
+    return null;
+  }
+
+  function toConfigDateValue(ms) {
+    if (ms == null) return null;
+    if (!db || typeof firebase === 'undefined' || !firebase.firestore?.Timestamp) return new Date(ms).toISOString();
+    return firebase.firestore.Timestamp.fromDate(new Date(ms));
+  }
+
+  function formatDateTime(ms) {
+    if (!Number.isFinite(ms)) return '—';
+    return new Intl.DateTimeFormat('pl-PL', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(ms));
+  }
+
+  function getRouteQueryParam(name) {
+    const hash = window.location.hash.slice(1) || '/vote';
+    const query = hash.includes('?') ? hash.split('?')[1] : '';
+    return new URLSearchParams(query).get(name);
+  }
+
+  function getVotingWindowState(nowMs) {
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    const hasStart = Number.isFinite(votingStartAtMs);
+    const hasEnd = Number.isFinite(votingEndAtMs);
+    let allowed = votingEnabled;
+    let reason = votingEnabled ? 'enabled' : 'disabled';
+    if (allowed && hasStart && now < votingStartAtMs) {
+      allowed = false;
+      reason = 'not_started';
+    }
+    if (allowed && hasEnd && now > votingEndAtMs) {
+      allowed = false;
+      reason = 'ended';
+    }
+    return {
+      allowed,
+      reason,
+      hasStart,
+      hasEnd,
+      hasSchedule: hasStart || hasEnd
+    };
+  }
+
+  function getVotingClosedBannerMessage() {
+    const state = getVotingWindowState();
+    if (state.reason === 'disabled') {
+      return {
+        title: 'Voting is currently disabled.',
+        hint: 'Organisers have disabled voting. Check back later.'
+      };
+    }
+    if (state.reason === 'not_started') {
+      return {
+        title: 'Voting has not started yet.',
+        hint: 'Start time: ' + formatDateTime(votingStartAtMs)
+      };
+    }
+    if (state.reason === 'ended') {
+      return {
+        title: 'Voting has ended.',
+        hint: 'End time: ' + formatDateTime(votingEndAtMs)
+      };
+    }
+    return { title: '', hint: '' };
+  }
+
+  function toDatetimeInputValue(ms) {
+    if (!Number.isFinite(ms)) return '';
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function parseDatetimeInputValue(raw) {
+    if (!raw) return null;
+    const parsed = new Date(raw).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function buildTeamKey(project) {
+    const team = (project.team || '').trim().toLowerCase();
+    if (team) return 'team:' + team;
+    return 'project:' + (project.id || project.name || Math.random().toString(36).slice(2));
+  }
+
+  function generateTeamToken() {
+    const random = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    return 'team_' + random.slice(0, 24);
+  }
+
+  function ensureTeamTokens(projects) {
+    const tokenByKey = {};
+    projects.forEach(p => {
+      if (p.teamToken) tokenByKey[buildTeamKey(p)] = p.teamToken;
+    });
+    const updates = [];
+    const withTokens = projects.map(p => {
+      const key = buildTeamKey(p);
+      let token = p.teamToken || tokenByKey[key];
+      if (!token) {
+        token = generateTeamToken();
+        tokenByKey[key] = token;
+        updates.push({ id: p.id, teamToken: token });
+      }
+      return { ...p, teamToken: token };
+    });
+    return { withTokens, updates };
+  }
+
+  function buildTeamResultsLink(token) {
+    if (!token) return '';
+    return window.location.origin + window.location.pathname + '#/team?token=' + encodeURIComponent(token);
+  }
+
+  function resolveTeamTokenForProject(projectId, teamName) {
+    const normalizedTeam = (teamName || '').trim().toLowerCase();
+    const sameTeamProject = normalizedTeam
+      ? adminProjectsCache.find(p => p.id !== projectId && (p.team || '').trim().toLowerCase() === normalizedTeam && p.teamToken)
+      : null;
+    if (sameTeamProject) return sameTeamProject.teamToken;
+    const current = adminProjectsCache.find(p => p.id === projectId);
+    if (current?.teamToken) {
+      const currentTeam = (current.team || '').trim().toLowerCase();
+      if (!normalizedTeam || normalizedTeam === currentTeam) return current.teamToken;
+    }
+    return generateTeamToken();
+  }
+
   function loadVotingConfig() {
     if (!db) {
       votingEnabled = localStorage.getItem(VOTING_ENABLED_KEY) !== 'false';
+      votingStartAtMs = parseConfigDateValue(localStorage.getItem(VOTING_START_KEY));
+      votingEndAtMs = parseConfigDateValue(localStorage.getItem(VOTING_END_KEY));
       return Promise.resolve();
     }
     return db.collection('config').doc(CONFIG_DOC).get()
-      .then(doc => { votingEnabled = doc.exists && doc.data().votingEnabled !== false; })
-      .catch(() => { votingEnabled = true; });
+      .then(doc => {
+        if (!doc.exists) {
+          votingEnabled = true;
+          votingStartAtMs = null;
+          votingEndAtMs = null;
+          return;
+        }
+        const data = doc.data() || {};
+        votingEnabled = data.votingEnabled !== false;
+        votingStartAtMs = parseConfigDateValue(data.votingStartAt);
+        votingEndAtMs = parseConfigDateValue(data.votingEndAt);
+      })
+      .catch(() => {
+        votingEnabled = true;
+        votingStartAtMs = null;
+        votingEndAtMs = null;
+      });
   }
 
   function setVotingEnabled(enabled) {
@@ -72,6 +239,22 @@
       return Promise.resolve();
     }
     return db.collection('config').doc(CONFIG_DOC).set({ votingEnabled: enabled }, { merge: true });
+  }
+
+  function setVotingSchedule(startAtMs, endAtMs) {
+    votingStartAtMs = startAtMs;
+    votingEndAtMs = endAtMs;
+    if (!db) {
+      if (startAtMs == null) localStorage.removeItem(VOTING_START_KEY);
+      else localStorage.setItem(VOTING_START_KEY, String(startAtMs));
+      if (endAtMs == null) localStorage.removeItem(VOTING_END_KEY);
+      else localStorage.setItem(VOTING_END_KEY, String(endAtMs));
+      return Promise.resolve();
+    }
+    return db.collection('config').doc(CONFIG_DOC).set({
+      votingStartAt: toConfigDateValue(startAtMs),
+      votingEndAt: toConfigDateValue(endAtMs)
+    }, { merge: true });
   }
 
   const router = {
@@ -251,7 +434,7 @@
       return;
     }
     if (voteState.selected.size >= MAX_VOTES) {
-      showToast('You can vote for a maximum of 2 projects. Remove one to select another.', 'error');
+      showToast('You can vote for only 1 project. Remove current vote to choose another.', 'error');
       document.getElementById('vote-warning')?.classList.add('visible');
       return;
     }
@@ -299,10 +482,10 @@
 
   function submitVotes() {
     if (voteState.selected.size === 0) {
-      showToast('Select at least one project to vote.', 'error');
+      showToast('Select one project to vote.', 'error');
       return;
     }
-    showToast('Votes saved. You can change them anytime.', 'success');
+    showToast('Vote saved. You can change it anytime.', 'success');
   }
 
   function openVideoModal(url) {
@@ -340,7 +523,9 @@
   function renderVotePage() {
     const used = voteState.selected.size;
     const counterClass = used === MAX_VOTES ? 'vote-counter at-limit' : 'vote-counter';
-    const votingClosed = !votingEnabled;
+    const votingState = getVotingWindowState();
+    const votingClosed = !votingState.allowed;
+    const closedBanner = getVotingClosedBannerMessage();
     const warning = document.getElementById('vote-warning');
     if (warning) warning.classList.toggle('visible', false);
 
@@ -379,19 +564,19 @@
         '</div>' +
         '<div class="container">' +
         '<header class="vote-header">' +
-          (votingClosed ? '<div class="vote-closed-banner"><p>Voting is currently closed.</p><p class="vote-closed-hint">Organisers have disabled voting. Check back later.</p></div>' : '') +
+          (votingClosed ? '<div class="vote-closed-banner"><p>' + escapeHtml(closedBanner.title) + '</p><p class="vote-closed-hint">' + escapeHtml(closedBanner.hint) + '</p></div>' : '') +
           '<h1>UiPath Fusion</h1>' +
           '<p class="subtitle">Public Choice Award</p>' +
-          '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Vote for up to 2 projects. You can change your vote anytime.') + '</p>' +
+          '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Vote for 1 project. You can change your vote anytime.') + '</p>' +
           (votingClosed ? '' : '<div class="' + counterClass + '" id="vote-counter">Votes used: ' + used + ' / ' + MAX_VOTES + '</div>') +
-          (votingClosed ? '' : '<p class="vote-warning" id="vote-warning">You can vote for a maximum of 2 projects. Remove one to select another.</p>') +
+          (votingClosed ? '' : '<p class="vote-warning" id="vote-warning">You can vote for only 1 project. Remove current vote to choose another.</p>') +
         '</header>' +
         '<div class="projects-list" id="projects-list">' + (cards || (useLiveOnly && !db ? '<p class="empty-state">Connect Firebase to load projects.</p>' : '<p class="empty-state">No projects yet. Check back later.</p>')) + '</div>' +
         '</div>' +
         (votingClosed ? '' : '<div class="submit-votes-bar' + (used > 0 ? ' submit-votes-bar--has-votes' : '') + '" id="submit-votes-bar">' +
           '<div class="submit-votes-bar-inner">' +
             '<div class="submit-votes-counter" id="submit-votes-counter">Votes: ' + used + ' / ' + MAX_VOTES + '</div>' +
-            '<p class="submit-votes-cta">' + (used > 0 ? 'Tap below to confirm your votes' : 'Choose up to 2 projects, then confirm') + '</p>' +
+            '<p class="submit-votes-cta">' + (used > 0 ? 'Tap below to confirm your vote' : 'Choose 1 project, then confirm') + '</p>' +
             '<button type="button" class="btn btn-primary btn-submit-votes" id="submit-votes-btn">Submit my votes</button>' +
           '</div>' +
         '</div>') +
@@ -564,6 +749,101 @@
     }
   }
 
+  // ---------- Team results ----------
+  function renderTeamResultsPage(payload) {
+    if (!payload || payload.error) {
+      render(getAppEl(),
+        '<div class="results-page container">' +
+          '<h1>Team results</h1>' +
+          '<p class="empty-state">' + escapeHtml(payload?.error || 'Invalid team link.') + '</p>' +
+        '</div>'
+      );
+      return;
+    }
+
+    const { teamLabel, projects, voteCounts } = payload;
+    const items = projects.map(p => ({
+      name: p.name || 'Unnamed',
+      votes: voteCounts[p.id] || 0
+    })).sort((a, b) => b.votes - a.votes);
+    const total = items.reduce((sum, item) => sum + item.votes, 0);
+
+    const rows = items.map(item =>
+      '<div class="result-item">' +
+        '<div class="name">' + escapeHtml(item.name) + '</div>' +
+        '<div class="stats">Votes: ' + item.votes + '</div>' +
+      '</div>'
+    ).join('');
+
+    render(getAppEl(),
+      '<div class="results-page">' +
+        '<div class="results-banner-wrap">' +
+          '<img src="images/banner-hero.png" alt="Agent Pageant – Team results" class="results-banner" />' +
+        '</div>' +
+        '<div class="container">' +
+          '<div class="results-header-row">' +
+            '<h1>Team results</h1>' +
+          '</div>' +
+          '<p class="results-mock-hint"><strong>Team:</strong> ' + escapeHtml(teamLabel || 'Your team') + '</p>' +
+          '<p class="results-mock-hint"><strong>Total votes:</strong> ' + total + '</p>' +
+          '<div class="results-list">' + (rows || '<p class="empty-state">No projects for this team.</p>') + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function loadTeamResultsByToken() {
+    const token = getRouteQueryParam('token');
+    if (!token) {
+      renderTeamResultsPage({ error: 'Missing team token in link.' });
+      return;
+    }
+
+    if (!db) {
+      if (adminMockProjects.length === 0) {
+        MOCK_PROJECTS.forEach(p => adminMockProjects.push({ ...p }));
+        const ensuredMock = ensureTeamTokens(adminMockProjects);
+        adminMockProjects = ensuredMock.withTokens;
+      }
+      const ownProjects = adminMockProjects.filter(p => p.teamToken === token && p.isActive !== false);
+      if (ownProjects.length === 0) {
+        renderTeamResultsPage({ error: 'No projects found for this team link.' });
+        return;
+      }
+      const voteCounts = {};
+      const mockStats = getMockStats();
+      ownProjects.forEach(p => { voteCounts[p.id] = mockStats.voteCounts[p.id] || 0; });
+      try {
+        const localVotes = JSON.parse(localStorage.getItem(MOCK_VOTES_KEY) || '[]');
+        if (Array.isArray(localVotes)) {
+          localVotes.forEach(pid => {
+            if (voteCounts[pid] != null) voteCounts[pid] += 1;
+          });
+        }
+      } catch (_) {}
+      renderTeamResultsPage({ teamLabel: ownProjects[0].team || ownProjects[0].name, projects: ownProjects, voteCounts });
+      return;
+    }
+
+    Promise.all([
+      db.collection('projects').where('teamToken', '==', token).get(),
+      db.collection('votes').get()
+    ]).then(([projSnap, voteSnap]) => {
+      const ownProjects = projSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.isActive !== false);
+      if (ownProjects.length === 0) {
+        renderTeamResultsPage({ error: 'No projects found for this team link.' });
+        return;
+      }
+      const voteCounts = {};
+      const ownIds = new Set(ownProjects.map(p => p.id));
+      voteSnap.docs.forEach(d => {
+        const pid = d.data().projectId;
+        if (ownIds.has(pid)) voteCounts[pid] = (voteCounts[pid] || 0) + 1;
+      });
+      renderTeamResultsPage({ teamLabel: ownProjects[0].team || ownProjects[0].name, projects: ownProjects, voteCounts });
+    }).catch(() => renderTeamResultsPage({ error: 'Failed to load team results.' }));
+  }
+
   // ---------- Admin (mock state when no Firebase) ----------
   let adminMockProjects = [];
   let adminMockStats = { voteCounts: {}, viewCounts: {} };
@@ -598,6 +878,7 @@
   function loadAdminData() {
     if (!db) {
       if (useLiveOnly) {
+        adminProjectsCache = [];
         renderAdminPage({ projects: [], voteCounts: {}, viewCounts: {}, uniqueDevicesByProject: {}, uniqueDevicesTotal: 0, totalVotes: 0, liveOnlyNoDb: true });
         return;
       }
@@ -605,6 +886,9 @@
         MOCK_PROJECTS.forEach(p => adminMockProjects.push({ ...p }));
         adminMockStats = getMockStats();
       }
+      const ensuredMock = ensureTeamTokens(adminMockProjects);
+      adminMockProjects = ensuredMock.withTokens;
+      adminProjectsCache = adminMockProjects.slice();
       const mock = getMockStats();
       renderAdminPage({
         projects: adminMockProjects,
@@ -621,7 +905,9 @@
       db.collection('votes').get(),
       db.collection('views').get()
     ]).then(([projSnap, voteSnap, viewSnap]) => {
-      const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const rawProjects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const ensured = ensureTeamTokens(rawProjects);
+      const projects = ensured.withTokens;
       const voteCounts = {};
       const uniqueDevicesByProject = {};
       const allVoterIds = new Set();
@@ -637,29 +923,57 @@
       const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
       const uniqueDevicesByProjectSizes = {};
       Object.keys(uniqueDevicesByProject).forEach(pid => { uniqueDevicesByProjectSizes[pid] = uniqueDevicesByProject[pid].size; });
-      renderAdminPage({
-        projects,
-        voteCounts,
-        viewCounts,
-        uniqueDevicesByProject: uniqueDevicesByProjectSizes,
-        uniqueDevicesTotal: allVoterIds.size,
-        totalVotes
+      const finalize = () => {
+        adminProjectsCache = projects.slice();
+        renderAdminPage({
+          projects,
+          voteCounts,
+          viewCounts,
+          uniqueDevicesByProject: uniqueDevicesByProjectSizes,
+          uniqueDevicesTotal: allVoterIds.size,
+          totalVotes
+        });
+      };
+      if (ensured.updates.length === 0) {
+        finalize();
+        return;
+      }
+      const batch = db.batch();
+      ensured.updates.forEach(u => {
+        batch.set(db.collection('projects').doc(u.id), { teamToken: u.teamToken }, { merge: true });
       });
-    }).catch(() => renderAdminPage({ projects: [], voteCounts: {}, viewCounts: {}, uniqueDevicesByProject: {}, uniqueDevicesTotal: 0, totalVotes: 0 }));
+      batch.commit().then(finalize).catch(finalize);
+    }).catch(() => {
+      adminProjectsCache = [];
+      renderAdminPage({ projects: [], voteCounts: {}, viewCounts: {}, uniqueDevicesByProject: {}, uniqueDevicesTotal: 0, totalVotes: 0 });
+    });
   }
 
   function renderAdminPage(data) {
     const { projects, voteCounts, viewCounts, uniqueDevicesByProject = {}, uniqueDevicesTotal = 0, totalVotes = 0, liveOnlyNoDb = false } = data;
+    const votingWindow = getVotingWindowState();
+    const scheduleText = (votingStartAtMs || votingEndAtMs)
+      ? ('Start: ' + (votingStartAtMs ? formatDateTime(votingStartAtMs) : 'immediately') + ' | End: ' + (votingEndAtMs ? formatDateTime(votingEndAtMs) : 'no end'))
+      : 'No schedule set (manual on/off only).';
     const rows = projects.map(p => {
       const votes = voteCounts[p.id] || 0;
       const views = viewCounts[p.id] || 0;
       const uniqueDevices = uniqueDevicesByProject[p.id] != null ? uniqueDevicesByProject[p.id] : votes;
+      const teamLink = p.teamToken ? buildTeamResultsLink(p.teamToken) : '';
       return '<tr>' +
         '<td>' + escapeHtml(p.name || '') + '</td>' +
         '<td>' + escapeHtml(p.team || '') + '</td>' +
         '<td>' + votes + '</td>' +
         '<td>' + uniqueDevices + '</td>' +
         '<td>' + views + '</td>' +
+        '<td class="admin-team-link-cell">' +
+          (teamLink
+            ? '<div class="admin-team-link-actions">' +
+                '<a href="' + escapeAttr(teamLink) + '" target="_blank" rel="noopener">Open</a>' +
+                '<button type="button" class="btn btn-secondary copy-team-link" data-id="' + escapeAttr(p.id) + '" data-link="' + escapeAttr(teamLink) + '">Copy link</button>' +
+              '</div>'
+            : '<span class="admin-team-link-empty">—</span>') +
+        '</td>' +
         '<td class="admin-actions">' +
           '<button type="button" class="btn btn-secondary edit-project" data-id="' + escapeAttr(p.id) + '">Edit</button>' +
           '<button type="button" class="btn btn-secondary toggle-project" data-id="' + escapeAttr(p.id) + '" data-active="' + (p.isActive !== false) + '">' + (p.isActive !== false ? 'Disable' : 'Enable') + '</button>' +
@@ -673,17 +987,28 @@
         (liveOnlyNoDb ? '<p class="results-mock-hint">Live mode: connect Firebase to manage projects and see stats.</p>' : '') +
         '<div class="admin-section admin-voting-toggle">' +
           '<h2>Voting</h2>' +
-          '<p class="admin-voting-status">Voting is <strong>' + (votingEnabled ? 'enabled' : 'disabled') + '</strong>. Participants ' + (votingEnabled ? 'can' : 'cannot') + ' submit votes.</p>' +
+          '<p class="admin-voting-status">Voting is <strong>' + (votingWindow.allowed ? 'open' : 'closed') + '</strong>. Manual switch is <strong>' + (votingEnabled ? 'enabled' : 'disabled') + '</strong>.</p>' +
+          '<p class="admin-voting-status">' + escapeHtml(scheduleText) + '</p>' +
           '<button type="button" class="btn ' + (votingEnabled ? 'btn-secondary' : 'btn-primary') + ' admin-toggle-voting" id="admin-toggle-voting">' + (votingEnabled ? 'Disable voting' : 'Enable voting') + '</button>' +
+          '<div class="admin-schedule-grid">' +
+            '<label for="admin-voting-start">Start date/time</label>' +
+            '<input type="datetime-local" id="admin-voting-start" value="' + escapeAttr(toDatetimeInputValue(votingStartAtMs)) + '" />' +
+            '<label for="admin-voting-end">End date/time</label>' +
+            '<input type="datetime-local" id="admin-voting-end" value="' + escapeAttr(toDatetimeInputValue(votingEndAtMs)) + '" />' +
+          '</div>' +
+          '<div class="admin-schedule-actions">' +
+            '<button type="button" class="btn btn-secondary" id="admin-save-schedule">Save schedule</button>' +
+            '<button type="button" class="btn btn-secondary" id="admin-clear-schedule">Clear schedule</button>' +
+          '</div>' +
         '</div>' +
         '<div class="admin-section admin-stats-summary">' +
           '<p class="admin-stats-line"><strong>Unique devices (voters):</strong> ' + uniqueDevicesTotal + ' &nbsp;|&nbsp; <strong>Total votes:</strong> ' + totalVotes + '</p>' +
-          '<p class="admin-stats-hint">Each device can vote for up to 2 projects. Votes are tied to device ID (localStorage).</p>' +
+          '<p class="admin-stats-hint">Each device can vote for 1 project. Votes are tied to device ID (localStorage).</p>' +
         '</div>' +
         '<div class="admin-section">' +
           '<h2>Projects</h2>' +
           '<div class="admin-table-wrap"><table class="admin-table">' +
-            '<thead><tr><th>Project name</th><th>Team</th><th>Votes</th><th>Unique devices</th><th>Views</th><th>Actions</th></tr></thead>' +
+            '<thead><tr><th>Project name</th><th>Team</th><th>Votes</th><th>Unique devices</th><th>Views</th><th>Team link</th><th>Actions</th></tr></thead>' +
             '<tbody id="admin-tbody">' + rows + '</tbody>' +
           '</table></div>' +
         '</div>' +
@@ -704,7 +1029,61 @@
       }).catch(() => showToast('Failed to update', 'error'));
     });
 
+    document.getElementById('admin-save-schedule')?.addEventListener('click', () => {
+      const startRaw = document.getElementById('admin-voting-start')?.value || '';
+      const endRaw = document.getElementById('admin-voting-end')?.value || '';
+      const startMs = parseDatetimeInputValue(startRaw);
+      const endMs = parseDatetimeInputValue(endRaw);
+      if (startRaw && startMs == null) {
+        showToast('Invalid start date/time', 'error');
+        return;
+      }
+      if (endRaw && endMs == null) {
+        showToast('Invalid end date/time', 'error');
+        return;
+      }
+      if (startMs != null && endMs != null && startMs >= endMs) {
+        showToast('End time must be later than start time', 'error');
+        return;
+      }
+      setVotingSchedule(startMs, endMs)
+        .then(() => { showToast('Voting schedule saved'); loadAdminData(); })
+        .catch(() => showToast('Failed to save schedule', 'error'));
+    });
+
+    document.getElementById('admin-clear-schedule')?.addEventListener('click', () => {
+      setVotingSchedule(null, null)
+        .then(() => { showToast('Voting schedule cleared'); loadAdminData(); })
+        .catch(() => showToast('Failed to clear schedule', 'error'));
+    });
+
     document.getElementById('admin-tbody')?.addEventListener('click', (e) => {
+      const copyBtn = e.target.closest('.copy-team-link');
+      if (copyBtn) {
+        const url = copyBtn.getAttribute('data-link') || '';
+        if (!url) return;
+        const done = () => showToast('Team link copied');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(done).catch(() => showToast('Copy failed', 'error'));
+        } else {
+          const temp = document.createElement('textarea');
+          temp.value = url;
+          temp.setAttribute('readonly', '');
+          temp.style.position = 'absolute';
+          temp.style.left = '-9999px';
+          document.body.appendChild(temp);
+          temp.select();
+          try {
+            document.execCommand('copy');
+            done();
+          } catch (_) {
+            showToast('Copy failed', 'error');
+          }
+          document.body.removeChild(temp);
+        }
+        return;
+      }
+
       const id = e.target.closest('[data-id]')?.getAttribute('data-id');
       if (!id) return;
       const doc = projects.find(p => p.id === id);
@@ -850,13 +1229,15 @@
         showToast('Connect Firebase to manage projects.', 'error');
         return;
       }
+      const team = document.getElementById('project-form-team').value.trim();
       const data = {
         name,
-        team: document.getElementById('project-form-team').value.trim(),
+        team,
         description: document.getElementById('project-form-description').value.trim(),
         videoUrl: document.getElementById('project-form-videoUrl').value.trim() || null,
         thumbnailUrl: thumbnailUrl || null,
-        thumbnailDataUrl: thumbnailDataUrl || null
+        thumbnailDataUrl: thumbnailDataUrl || null,
+        teamToken: resolveTeamTokenForProject(id, team)
       };
       if (id) {
         if (db) {
@@ -902,7 +1283,27 @@
   });
 
   router.on('/results', function () {
+    if (!adminUnlocked) {
+      render(getAppEl(),
+        '<div class="results-page container">' +
+          '<h1>Results</h1>' +
+          '<p class="results-mock-hint">Global results are available for judges only. Teams should use their dedicated team link.</p>' +
+          '<button type="button" class="btn btn-secondary" id="btn-open-results-login">Judge login</button>' +
+        '</div>'
+      );
+      document.getElementById('btn-open-results-login')?.addEventListener('click', function () {
+        showAdminLogin(() => {
+          document.querySelector('.nav-link.admin-link')?.classList.add('visible');
+          loadResults();
+        });
+      });
+      return;
+    }
     loadResults();
+  });
+
+  router.on('/team', function () {
+    loadTeamResultsByToken();
   });
 
   router.on('/admin', function () {

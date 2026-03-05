@@ -1,9 +1,10 @@
 # UiPath Fusion — Public Choice Award (Hackathon Voting)
 
-Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote for up to 2 projects. Static SPA for **GitHub Pages**, data in **Firebase Firestore**.
+Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote for 1 project. Static SPA for **GitHub Pages**, data in **Firebase Firestore**.
 
-- **/#/vote** — Public voting (max 2 votes, change anytime)
-- **/#/results** — Live results and Chart.js bar chart
+- **/#/vote** — Public voting (max 1 vote, change anytime)
+- **/#/results** — Judge-only global results and Chart.js bar chart
+- **/#/team?token=...** — Team-only view (votes for own projects only)
 - **/#/admin** — Admin panel (add/edit/delete projects, stats; password-protected)
 
 ## Stack
@@ -52,7 +53,7 @@ Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote f
 ## Firestore collections
 
 - **projects**  
-  `projectId`, `name`, `description`, `team`, `videoUrl`, `thumbnailUrl`, `createdAt`, `isActive`
+  `projectId`, `name`, `description`, `team`, `teamToken`, `videoUrl`, `thumbnailUrl`, `createdAt`, `isActive`
 
 - **votes**  
   `voteId`, `projectId`, `voterId`, `timestamp`
@@ -61,7 +62,7 @@ Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote f
   `viewId`, `projectId`, `voterId`, `timestamp`
 
 - **config/app** (single document)  
-  `votingEnabled` (boolean) — when `false`, voting is disabled for everyone. Toggled from Admin.
+  `votingEnabled` (boolean), `votingStartAt` (timestamp|null), `votingEndAt` (timestamp|null) — enable/disable and schedule window, managed from Admin.
 
 ## Firestore rules (example)
 
