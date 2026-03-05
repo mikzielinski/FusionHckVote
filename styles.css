@@ -150,7 +150,9 @@ body > * {
   width: 100%;
   margin-bottom: 1rem;
   overflow: hidden;
-  background: var(--bg-darker);
+  background:
+    radial-gradient(circle at 52% 46%, rgba(24, 133, 164, 0.34) 0%, rgba(24, 133, 164, 0) 34%),
+    linear-gradient(90deg, #15253a 0%, #11283f 35%, #12384b 52%, #11263d 68%, #0f1f33 100%);
 }
 
 .vote-banner-picture {
@@ -521,8 +523,15 @@ body > * {
     justify-content: center;
   }
 
+  .vote-banner-picture {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
   .vote-banner-hero {
-    width: min(100%, 1600px);
+    width: min(100%, 1024px);
+    max-width: 1024px;
     max-height: none;
     min-height: 0;
     height: auto;
@@ -531,7 +540,8 @@ body > * {
   }
 
   .results-banner {
-    width: min(100%, 1400px);
+    width: min(100%, 1024px);
+    max-width: 1024px;
     max-height: none;
     min-height: 0;
     height: auto;
