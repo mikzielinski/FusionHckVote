@@ -725,7 +725,7 @@
     const listHtml = items.map(p =>
       '<div class="result-item">' +
         '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
-        '<div class="stats">Votes: ' + p.votes + ' — Views: ' + p.views + ' — Vote rate: ' + p.pct + '% — Engagement: ' + p.engagement + '%</div>' +
+        '<div class="stats">Votes: ' + p.votes + '</div>' +
         '<div class="bar-wrap"><div class="bar" style="width:' + (totalVotes ? (p.votes / totalVotes * 100) : 0) + '%"></div></div>' +
       '</div>'
     ).join('');
@@ -743,6 +743,7 @@
           '<h1>Live results</h1>' +
           '<button type="button" class="btn btn-secondary btn-refresh-results" id="btn-refresh-results">Refresh</button>' +
         '</div>' +
+        '<p class="results-mock-hint">Ranking is based on total votes only.</p>' +
         (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
         (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
         heroBlocks.winnerHtml +
@@ -783,7 +784,7 @@
             '<p class="winner-kicker">Winner announcement</p>' +
             '<h2>' + escapeHtml(winner.name || 'Unnamed') + '</h2>' +
             '<p class="winner-meta">' +
-              'Team: ' + escapeHtml(winner.team || '—') + ' | Votes: ' + winner.votes + ' | Share: ' + winner.pct + '%' +
+              'Team: ' + escapeHtml(winner.team || '—') + ' | Votes: ' + winner.votes +
             '</p>' +
           '</section>'
         )
@@ -818,18 +819,16 @@
 
   function renderPublicFinalResultsPage(data) {
     const { projects, voteCounts, isMock } = data;
-    const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
     const items = projects.filter(p => p.isActive !== false).map(p => {
       const votes = voteCounts[p.id] || 0;
-      const pct = totalVotes ? Math.round((votes / totalVotes) * 100) : 0;
-      return { ...p, votes, pct };
+      return { ...p, votes };
     }).sort((a, b) => b.votes - a.votes);
 
     const heroBlocks = buildWinnerAndPodiumHtml(items);
     const listHtml = items.map(p =>
       '<div class="result-item">' +
         '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
-        '<div class="stats">Votes: ' + p.votes + ' — Share: ' + p.pct + '%</div>' +
+        '<div class="stats">Votes: ' + p.votes + '</div>' +
       '</div>'
     ).join('');
 
@@ -843,7 +842,7 @@
             '<h1>Final results</h1>' +
             (adminUnlocked ? '<a href="#/results" class="btn btn-secondary">Judge details</a>' : '') +
           '</div>' +
-          '<p class="results-mock-hint">Voting ended — final winner podium.</p>' +
+          '<p class="results-mock-hint">Voting ended — final winner podium. Ranking is based on total votes only.</p>' +
           (isMock ? '<p class="results-mock-hint">Demo data mode.</p>' : '') +
           heroBlocks.winnerHtml +
           heroBlocks.podiumHtml +
