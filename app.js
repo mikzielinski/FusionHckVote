@@ -205,6 +205,21 @@
     return generateTeamToken();
   }
 
+  function backfillExistingTeamTokens() {
+    if (!db) return Promise.resolve();
+    return db.collection('projects').get().then((snap) => {
+      const rawProjects = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const ensured = ensureTeamTokens(rawProjects);
+      adminProjectsCache = ensured.withTokens.slice();
+      if (ensured.updates.length === 0) return;
+      const batch = db.batch();
+      ensured.updates.forEach((u) => {
+        batch.set(db.collection('projects').doc(u.id), { teamToken: u.teamToken }, { merge: true });
+      });
+      return batch.commit();
+    }).catch(() => {});
+  }
+
   function loadVotingConfig() {
     if (!db) {
       votingEnabled = localStorage.getItem(VOTING_ENABLED_KEY) !== 'false';
@@ -1329,6 +1344,7 @@
     initVideoModal();
     initProjectFormModal();
     initNavAdminLink();
+    backfillExistingTeamTokens();
     var appEl = document.getElementById('app');
     if (appEl) {
       appEl.addEventListener('click', function (e) {
