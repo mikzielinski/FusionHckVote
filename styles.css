@@ -242,6 +242,10 @@ body > * {
 
 .vote-closed-actions {
   margin-top: 0.85rem;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .vote-closed-actions .btn {

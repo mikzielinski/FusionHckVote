@@ -541,8 +541,13 @@
     const votingState = getVotingWindowState();
     const votingClosed = !votingState.allowed;
     const closedBanner = getVotingClosedBannerMessage();
-    const closedBannerAction = (votingState.reason === 'ended' && adminUnlocked)
-      ? '<div class="vote-closed-actions"><a href="#/results" class="btn btn-secondary">View winner podium</a></div>'
+    const closedBannerAction = votingState.reason === 'ended'
+      ? (
+          '<div class="vote-closed-actions">' +
+            '<a href="#/final-results" class="btn btn-secondary">View final podium</a>' +
+            (adminUnlocked ? '<a href="#/results" class="btn btn-secondary">Judge details</a>' : '') +
+          '</div>'
+        )
       : '';
     const warning = document.getElementById('vote-warning');
     if (warning) warning.classList.toggle('visible', false);
@@ -727,6 +732,50 @@
 
     const totalVotesNum = Object.values(voteCounts).reduce((a, b) => a + b, 0);
     const isMock = !db;
+    const heroBlocks = buildWinnerAndPodiumHtml(items);
+    const html =
+      '<div class="results-page">' +
+        '<div class="results-banner-wrap">' +
+          '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="results-banner" />' +
+        '</div>' +
+        '<div class="container">' +
+        '<div class="results-header-row">' +
+          '<h1>Live results</h1>' +
+          '<button type="button" class="btn btn-secondary btn-refresh-results" id="btn-refresh-results">Refresh</button>' +
+        '</div>' +
+        (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
+        (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
+        heroBlocks.winnerHtml +
+        heroBlocks.podiumHtml +
+        '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
+        '<div class="chart-container"><canvas id="results-chart"></canvas></div>' +
+        '</div>' +
+      '</div>';
+    render(getAppEl(), html);
+
+    const ctx = document.getElementById('results-chart')?.getContext('2d');
+    if (ctx && typeof Chart !== 'undefined') {
+      if (resultsChart) resultsChart.destroy();
+      resultsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: items.map(p => (p.name || 'Unnamed').slice(0, 20)),
+          datasets: [{ label: 'Votes', data: items.map(p => p.votes), backgroundColor: 'rgba(255, 107, 53, 0.8)', borderColor: '#ff6b35', borderWidth: 1 }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { color: '#cbd5e1' } },
+            x: { ticks: { color: '#cbd5e1', maxRotation: 45 } }
+          }
+        }
+      });
+    }
+  }
+
+  function buildWinnerAndPodiumHtml(items) {
     const winner = items[0] || null;
     const winnerHtml = winner
       ? (
@@ -764,46 +813,76 @@
           '</section>'
         )
       : '';
-    const html =
+    return { winnerHtml, podiumHtml };
+  }
+
+  function renderPublicFinalResultsPage(data) {
+    const { projects, voteCounts, isMock } = data;
+    const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+    const items = projects.filter(p => p.isActive !== false).map(p => {
+      const votes = voteCounts[p.id] || 0;
+      const pct = totalVotes ? Math.round((votes / totalVotes) * 100) : 0;
+      return { ...p, votes, pct };
+    }).sort((a, b) => b.votes - a.votes);
+
+    const heroBlocks = buildWinnerAndPodiumHtml(items);
+    const listHtml = items.map(p =>
+      '<div class="result-item">' +
+        '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
+        '<div class="stats">Votes: ' + p.votes + ' — Share: ' + p.pct + '%</div>' +
+      '</div>'
+    ).join('');
+
+    render(getAppEl(),
       '<div class="results-page">' +
         '<div class="results-banner-wrap">' +
-          '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="results-banner" />' +
+          '<img src="images/banner-hero.png" alt="Agent Pageant – Final results" class="results-banner" />' +
         '</div>' +
         '<div class="container">' +
-        '<div class="results-header-row">' +
-          '<h1>Live results</h1>' +
-          '<button type="button" class="btn btn-secondary btn-refresh-results" id="btn-refresh-results">Refresh</button>' +
+          '<div class="results-header-row">' +
+            '<h1>Final results</h1>' +
+            (adminUnlocked ? '<a href="#/results" class="btn btn-secondary">Judge details</a>' : '') +
+          '</div>' +
+          '<p class="results-mock-hint">Voting ended — final winner podium.</p>' +
+          (isMock ? '<p class="results-mock-hint">Demo data mode.</p>' : '') +
+          heroBlocks.winnerHtml +
+          heroBlocks.podiumHtml +
+          '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
         '</div>' +
-        (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
-        (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
-        winnerHtml +
-        podiumHtml +
-        '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
-        '<div class="chart-container"><canvas id="results-chart"></canvas></div>' +
-        '</div>' +
-      '</div>';
-    render(getAppEl(), html);
+      '</div>'
+    );
+  }
 
-    const ctx = document.getElementById('results-chart')?.getContext('2d');
-    if (ctx && typeof Chart !== 'undefined') {
-      if (resultsChart) resultsChart.destroy();
-      resultsChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: items.map(p => (p.name || 'Unnamed').slice(0, 20)),
-          datasets: [{ label: 'Votes', data: items.map(p => p.votes), backgroundColor: 'rgba(255, 107, 53, 0.8)', borderColor: '#ff6b35', borderWidth: 1 }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { beginAtZero: true, ticks: { color: '#cbd5e1' } },
-            x: { ticks: { color: '#cbd5e1', maxRotation: 45 } }
-          }
-        }
-      });
+  function loadPublicFinalResults() {
+    if (!db) {
+      if (useLiveOnly) {
+        renderPublicFinalResultsPage({ projects: [], voteCounts: {}, isMock: true });
+        return;
+      }
+      const mock = getMockStats();
+      const voteCounts = { ...mock.voteCounts };
+      try {
+        const myVotes = JSON.parse(localStorage.getItem(MOCK_VOTES_KEY) || '[]');
+        if (Array.isArray(myVotes)) myVotes.forEach(pid => { voteCounts[pid] = (voteCounts[pid] || 0) + 1; });
+      } catch (_) {}
+      renderPublicFinalResultsPage({ projects: MOCK_PROJECTS.slice(), voteCounts, isMock: true });
+      return;
     }
+
+    Promise.all([
+      db.collection('projects').get(),
+      db.collection('votes').get()
+    ]).then(([projSnap, voteSnap]) => {
+      const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const voteCounts = {};
+      voteSnap.docs.forEach(d => {
+        const pid = d.data().projectId;
+        voteCounts[pid] = (voteCounts[pid] || 0) + 1;
+      });
+      renderPublicFinalResultsPage({ projects, voteCounts, isMock: false });
+    }).catch(() => {
+      renderPublicFinalResultsPage({ projects: [], voteCounts: {}, isMock: false });
+    });
   }
 
   // ---------- Team results ----------
@@ -1340,23 +1419,51 @@
   });
 
   router.on('/results', function () {
-    if (!adminUnlocked) {
-      render(getAppEl(),
-        '<div class="results-page container">' +
-          '<h1>Results</h1>' +
-          '<p class="results-mock-hint">Global results are available for judges only. Teams should use their dedicated team link.</p>' +
-          '<button type="button" class="btn btn-secondary" id="btn-open-results-login">Judge login</button>' +
-        '</div>'
-      );
-      document.getElementById('btn-open-results-login')?.addEventListener('click', function () {
-        showAdminLogin(() => {
-          document.querySelector('.nav-link.admin-link')?.classList.add('visible');
-          loadResults();
+    loadVotingConfig().then(() => {
+      const votingState = getVotingWindowState();
+      if (!adminUnlocked) {
+        if (votingState.reason === 'ended') {
+          loadPublicFinalResults();
+          return;
+        }
+        render(getAppEl(),
+          '<div class="results-page container">' +
+            '<h1>Results</h1>' +
+            '<p class="results-mock-hint">Global results are available for judges only. Teams should use their dedicated team link.</p>' +
+            '<button type="button" class="btn btn-secondary" id="btn-open-results-login">Judge login</button>' +
+          '</div>'
+        );
+        document.getElementById('btn-open-results-login')?.addEventListener('click', function () {
+          showAdminLogin(() => {
+            document.querySelector('.nav-link.admin-link')?.classList.add('visible');
+            loadResults();
+          });
         });
-      });
-      return;
-    }
-    loadResults();
+        return;
+      }
+      loadResults();
+    }).catch(() => {
+      if (adminUnlocked) loadResults();
+      else render(getAppEl(), '<div class="results-page container"><p class="empty-state">Failed to load results.</p></div>');
+    });
+  });
+
+  router.on('/final-results', function () {
+    loadVotingConfig().then(() => {
+      const votingState = getVotingWindowState();
+      if (votingState.reason !== 'ended' && !adminUnlocked) {
+        render(getAppEl(),
+          '<div class="results-page container">' +
+            '<h1>Final results</h1>' +
+            '<p class="results-mock-hint">Final podium is available after voting ends.</p>' +
+          '</div>'
+        );
+        return;
+      }
+      loadPublicFinalResults();
+    }).catch(() => {
+      render(getAppEl(), '<div class="results-page container"><p class="empty-state">Failed to load final results.</p></div>');
+    });
   });
 
   router.on('/team', function () {
