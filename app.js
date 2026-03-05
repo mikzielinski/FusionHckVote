@@ -13,6 +13,7 @@
   const VOTING_ENABLED_KEY = 'fusionVotingEnabled'; // when no Firebase: admin toggle
   const VOTING_START_KEY = 'fusionVotingStartAt';
   const VOTING_END_KEY = 'fusionVotingEndAt';
+  const TIE_BREAK_WINNER_KEY = 'fusionTieBreakWinnerProjectId';
   const MAX_VOTES = 1;
   const ADMIN_KEY = 'fusionAdminUnlocked';
   const CONFIG_DOC = 'app';
@@ -22,6 +23,7 @@
   let votingEnabled = true;
   let votingStartAtMs = null;
   let votingEndAtMs = null;
+  let tieBreakWinnerProjectId = null;
   let adminProjectsCache = [];
 
   function getVoterId() {
@@ -225,6 +227,7 @@
       votingEnabled = localStorage.getItem(VOTING_ENABLED_KEY) !== 'false';
       votingStartAtMs = parseConfigDateValue(localStorage.getItem(VOTING_START_KEY));
       votingEndAtMs = parseConfigDateValue(localStorage.getItem(VOTING_END_KEY));
+      tieBreakWinnerProjectId = localStorage.getItem(TIE_BREAK_WINNER_KEY) || null;
       return Promise.resolve();
     }
     return db.collection('config').doc(CONFIG_DOC).get()
@@ -233,17 +236,20 @@
           votingEnabled = true;
           votingStartAtMs = null;
           votingEndAtMs = null;
+          tieBreakWinnerProjectId = null;
           return;
         }
         const data = doc.data() || {};
         votingEnabled = data.votingEnabled !== false;
         votingStartAtMs = parseConfigDateValue(data.votingStartAt);
         votingEndAtMs = parseConfigDateValue(data.votingEndAt);
+        tieBreakWinnerProjectId = (typeof data.tieBreakWinnerProjectId === 'string' && data.tieBreakWinnerProjectId) ? data.tieBreakWinnerProjectId : null;
       })
       .catch(() => {
         votingEnabled = true;
         votingStartAtMs = null;
         votingEndAtMs = null;
+        tieBreakWinnerProjectId = null;
       });
   }
 
@@ -269,6 +275,18 @@
     return db.collection('config').doc(CONFIG_DOC).set({
       votingStartAt: toConfigDateValue(startAtMs),
       votingEndAt: toConfigDateValue(endAtMs)
+    }, { merge: true });
+  }
+
+  function setTieBreakWinnerProjectId(projectId) {
+    tieBreakWinnerProjectId = projectId || null;
+    if (!db) {
+      if (tieBreakWinnerProjectId) localStorage.setItem(TIE_BREAK_WINNER_KEY, tieBreakWinnerProjectId);
+      else localStorage.removeItem(TIE_BREAK_WINNER_KEY);
+      return Promise.resolve();
+    }
+    return db.collection('config').doc(CONFIG_DOC).set({
+      tieBreakWinnerProjectId: tieBreakWinnerProjectId
     }, { merge: true });
   }
 
@@ -704,6 +722,51 @@
     });
   }
 
+  function computeTieState(items) {
+    const ranked = items.slice();
+    if (ranked.length === 0) {
+      return {
+        hasTie: false,
+        topVotes: 0,
+        tied: [],
+        hasSelectedWinner: false,
+        selectedWinner: null,
+        winner: null,
+        rankedItems: ranked
+      };
+    }
+    const topVotes = ranked[0].votes || 0;
+    const tied = ranked.filter(p => p.votes === topVotes);
+    const hasTie = tied.length > 1 && topVotes > 0;
+    const selectedWinner = hasTie && tieBreakWinnerProjectId
+      ? (tied.find(p => p.id === tieBreakWinnerProjectId) || null)
+      : null;
+
+    if (!selectedWinner) {
+      return {
+        hasTie,
+        topVotes,
+        tied,
+        hasSelectedWinner: false,
+        selectedWinner: null,
+        winner: ranked[0],
+        rankedItems: ranked
+      };
+    }
+
+    const tiedOthers = tied.filter(p => p.id !== selectedWinner.id);
+    const nonTied = ranked.filter(p => p.votes !== topVotes);
+    return {
+      hasTie,
+      topVotes,
+      tied,
+      hasSelectedWinner: true,
+      selectedWinner,
+      winner: selectedWinner,
+      rankedItems: [selectedWinner].concat(tiedOthers, nonTied)
+    };
+  }
+
   function renderResultsPage(data) {
     const { projects, voteCounts, viewCounts } = data;
     const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0);
@@ -721,8 +784,10 @@
         engagement
       };
     }).sort((a, b) => b.votes - a.votes);
+    const tieState = computeTieState(items);
+    const rankingItems = tieState.rankedItems;
 
-    const listHtml = items.map(p =>
+    const listHtml = rankingItems.map(p =>
       '<div class="result-item">' +
         '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
         '<div class="stats">Votes: ' + p.votes + '</div>' +
@@ -732,7 +797,20 @@
 
     const totalVotesNum = Object.values(voteCounts).reduce((a, b) => a + b, 0);
     const isMock = !db;
-    const heroBlocks = buildWinnerAndPodiumHtml(items);
+    const heroBlocks = buildWinnerAndPodiumHtml(rankingItems, tieState);
+    const tieNames = tieState.tied.map(p => escapeHtml(p.name || 'Unnamed')).join(', ');
+    const tiePanelHtml = tieState.hasTie
+      ? (
+          '<section class="tie-break-panel">' +
+            '<p class="tie-break-title">Tie detected at first place</p>' +
+            '<p class="tie-break-text">Tied projects (' + tieState.topVotes + ' votes): ' + tieNames + '</p>' +
+            '<div class="tie-break-actions">' +
+              '<button type="button" class="btn btn-primary" id="btn-random-tie-break">Randomly pick winner</button>' +
+              (tieState.hasSelectedWinner ? '<button type="button" class="btn btn-secondary" id="btn-clear-tie-break">Clear tie-break winner</button>' : '') +
+            '</div>' +
+          '</section>'
+        )
+      : '';
     const html =
       '<div class="results-page">' +
         '<div class="results-banner-wrap">' +
@@ -747,6 +825,7 @@
         (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
         (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
         heroBlocks.winnerHtml +
+        tiePanelHtml +
         heroBlocks.podiumHtml +
         '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
         '<div class="chart-container"><canvas id="results-chart"></canvas></div>' +
@@ -754,14 +833,35 @@
       '</div>';
     render(getAppEl(), html);
 
+    document.getElementById('btn-random-tie-break')?.addEventListener('click', () => {
+      if (!tieState.hasTie || tieState.tied.length === 0) return;
+      const randomIdx = Math.floor(Math.random() * tieState.tied.length);
+      const chosen = tieState.tied[randomIdx];
+      setTieBreakWinnerProjectId(chosen.id)
+        .then(() => {
+          showToast('Tie-break winner selected: ' + (chosen.name || 'Unnamed'));
+          loadResults();
+        })
+        .catch(() => showToast('Failed to save tie-break winner', 'error'));
+    });
+
+    document.getElementById('btn-clear-tie-break')?.addEventListener('click', () => {
+      setTieBreakWinnerProjectId(null)
+        .then(() => {
+          showToast('Tie-break winner cleared');
+          loadResults();
+        })
+        .catch(() => showToast('Failed to clear tie-break winner', 'error'));
+    });
+
     const ctx = document.getElementById('results-chart')?.getContext('2d');
     if (ctx && typeof Chart !== 'undefined') {
       if (resultsChart) resultsChart.destroy();
       resultsChart = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: items.map(p => (p.name || 'Unnamed').slice(0, 20)),
-          datasets: [{ label: 'Votes', data: items.map(p => p.votes), backgroundColor: 'rgba(255, 107, 53, 0.8)', borderColor: '#ff6b35', borderWidth: 1 }]
+          labels: rankingItems.map(p => (p.name || 'Unnamed').slice(0, 20)),
+          datasets: [{ label: 'Votes', data: rankingItems.map(p => p.votes), backgroundColor: 'rgba(255, 107, 53, 0.8)', borderColor: '#ff6b35', borderWidth: 1 }]
         },
         options: {
           responsive: true,
@@ -776,15 +876,27 @@
     }
   }
 
-  function buildWinnerAndPodiumHtml(items) {
-    const winner = items[0] || null;
+  function buildWinnerAndPodiumHtml(items, tieState) {
+    const state = tieState || computeTieState(items);
+    const winner = state.winner;
+    const winnerKicker = state.hasTie && !state.hasSelectedWinner ? 'Tie for winner' : 'Winner announcement';
+    let winnerMeta = '';
+    if (winner) {
+      winnerMeta = 'Team: ' + escapeHtml(winner.team || '—') + ' | Votes: ' + winner.votes;
+      if (state.hasTie && state.hasSelectedWinner) {
+        winnerMeta += ' | Selected by random tie-break';
+      }
+      if (state.hasTie && !state.hasSelectedWinner) {
+        winnerMeta = 'Tie at ' + state.topVotes + ' votes. Draw random winner to finalize.';
+      }
+    }
     const winnerHtml = winner
       ? (
           '<section class="winner-announcement">' +
-            '<p class="winner-kicker">Winner announcement</p>' +
+            '<p class="winner-kicker">' + winnerKicker + '</p>' +
             '<h2>' + escapeHtml(winner.name || 'Unnamed') + '</h2>' +
             '<p class="winner-meta">' +
-              'Team: ' + escapeHtml(winner.team || '—') + ' | Votes: ' + winner.votes +
+              winnerMeta +
             '</p>' +
           '</section>'
         )
@@ -823,9 +935,11 @@
       const votes = voteCounts[p.id] || 0;
       return { ...p, votes };
     }).sort((a, b) => b.votes - a.votes);
+    const tieState = computeTieState(items);
+    const rankingItems = tieState.rankedItems;
 
-    const heroBlocks = buildWinnerAndPodiumHtml(items);
-    const listHtml = items.map(p =>
+    const heroBlocks = buildWinnerAndPodiumHtml(rankingItems, tieState);
+    const listHtml = rankingItems.map(p =>
       '<div class="result-item">' +
         '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
         '<div class="stats">Votes: ' + p.votes + '</div>' +
