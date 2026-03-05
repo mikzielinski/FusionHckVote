@@ -151,8 +151,9 @@ body > * {
   margin-bottom: 1rem;
   overflow: hidden;
   background:
-    radial-gradient(circle at 52% 46%, rgba(24, 133, 164, 0.34) 0%, rgba(24, 133, 164, 0) 34%),
-    linear-gradient(90deg, #15253a 0%, #11283f 35%, #12384b 52%, #11263d 68%, #0f1f33 100%);
+    radial-gradient(66% 125% at 52% 48%, rgba(35, 169, 197, 0.34) 0%, rgba(23, 119, 150, 0.14) 28%, rgba(15, 31, 51, 0) 62%),
+    linear-gradient(90deg, #142437 0%, #12314a 34%, #184560 50%, #123149 66%, #102033 100%),
+    linear-gradient(180deg, #132338 0%, #12253d 54%, #0f1f33 100%);
 }
 
 .vote-banner-picture {
