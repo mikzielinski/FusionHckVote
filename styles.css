@@ -153,6 +153,11 @@ body > * {
   background: var(--bg-darker);
 }
 
+.vote-banner-picture {
+  display: block;
+  width: 100%;
+}
+
 .vote-banner-hero {
   display: block;
   width: 100%;

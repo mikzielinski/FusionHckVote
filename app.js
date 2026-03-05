@@ -372,7 +372,10 @@
     const html =
       '<div class="vote-page">' +
         '<div class="vote-banner-wrap">' +
-          '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="vote-banner-hero" />' +
+          '<picture class="vote-banner-picture">' +
+            '<source media="(min-width: 768px)" srcset="images/banner-desktop.png" />' +
+            '<img src="images/banner-hero.png" alt="Agent Pageant – Agentic Automation Hackathon" class="vote-banner-hero" />' +
+          '</picture>' +
         '</div>' +
         '<div class="container">' +
         '<header class="vote-header">' +

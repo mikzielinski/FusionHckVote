@@ -15,7 +15,8 @@ Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote f
 
 ## Assets
 
-- `images/banner-hero.png` — wide Agent Pageant banner (vote page hero)
+- `images/banner-hero.png` — mobile vote-page banner
+- `images/banner-desktop.png` — desktop/laptop vote-page banner
 - `images/banner-event.png` — event banner (results page)
 
 ## Quick start
