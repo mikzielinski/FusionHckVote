@@ -508,6 +508,33 @@ body > * {
   object-position: center center;
 }
 
+/* Desktop banner: preserve full artwork instead of cropping */
+@media (min-width: 1024px) {
+  .vote-banner-wrap,
+  .results-banner-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  .vote-banner-hero {
+    width: min(100%, 1600px);
+    max-height: none;
+    min-height: 0;
+    height: auto;
+    object-fit: contain;
+    object-position: center center;
+  }
+
+  .results-banner {
+    width: min(100%, 1400px);
+    max-height: none;
+    min-height: 0;
+    height: auto;
+    object-fit: contain;
+    object-position: center center;
+  }
+}
+
 .results-header-row {
   display: flex;
   flex-wrap: wrap;
