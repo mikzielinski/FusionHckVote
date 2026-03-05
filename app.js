@@ -724,6 +724,43 @@
 
     const totalVotesNum = Object.values(voteCounts).reduce((a, b) => a + b, 0);
     const isMock = !db;
+    const winner = items[0] || null;
+    const winnerHtml = winner
+      ? (
+          '<section class="winner-announcement">' +
+            '<p class="winner-kicker">Winner announcement</p>' +
+            '<h2>' + escapeHtml(winner.name || 'Unnamed') + '</h2>' +
+            '<p class="winner-meta">' +
+              'Team: ' + escapeHtml(winner.team || '—') + ' | Votes: ' + winner.votes + ' | Share: ' + winner.pct + '%' +
+            '</p>' +
+          '</section>'
+        )
+      : '';
+    const podiumSlots = [
+      { place: '2nd', tier: 'silver', project: items[1] || null },
+      { place: '1st', tier: 'gold', project: items[0] || null },
+      { place: '3rd', tier: 'bronze', project: items[2] || null }
+    ];
+    const podiumHtml = items.length
+      ? (
+          '<section class="results-podium">' +
+            '<h2>Top 3 podium</h2>' +
+            '<div class="podium-grid">' +
+              podiumSlots.map(function (slot) {
+                const p = slot.project;
+                return (
+                  '<article class="podium-card podium-' + slot.tier + (p ? '' : ' empty') + '">' +
+                    '<div class="podium-place">' + slot.place + '</div>' +
+                    (p
+                      ? '<div class="podium-name">' + escapeHtml(p.name || 'Unnamed') + '</div><div class="podium-votes">' + p.votes + ' votes</div>'
+                      : '<div class="podium-name">—</div><div class="podium-votes">No project</div>') +
+                  '</article>'
+                );
+              }).join('') +
+            '</div>' +
+          '</section>'
+        )
+      : '';
     const html =
       '<div class="results-page">' +
         '<div class="results-banner-wrap">' +
@@ -736,6 +773,8 @@
         '</div>' +
         (isMock ? '<p class="results-mock-hint">' + (useLiveOnly ? 'Connect Firebase to see results.' : 'Demo data. Connect Firebase to see real-time votes.') + '</p>' : '') +
         (totalVotesNum === 0 && !isMock ? '<p class="empty-state">No votes yet. Be the first to vote!</p>' : '') +
+        winnerHtml +
+        podiumHtml +
         '<div class="results-list">' + (listHtml || '<p class="empty-state">No projects yet.</p>') + '</div>' +
         '<div class="chart-container"><canvas id="results-chart"></canvas></div>' +
         '</div>' +

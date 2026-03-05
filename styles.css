@@ -582,6 +582,106 @@ body > * {
   flex-shrink: 0;
 }
 
+.winner-announcement {
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.22) 0%, rgba(245, 87, 108, 0.12) 100%);
+  border: 1px solid rgba(255, 107, 53, 0.45);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  margin: 0.75rem 0 1rem 0;
+}
+
+.winner-kicker {
+  margin: 0 0 0.35rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fdba74;
+}
+
+.winner-announcement h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #fff7ed;
+}
+
+.winner-meta {
+  margin: 0.4rem 0 0 0;
+  color: #fed7aa;
+  font-size: 0.92rem;
+}
+
+.results-podium {
+  margin-bottom: 1.2rem;
+}
+
+.results-podium h2 {
+  margin: 0 0 0.65rem 0;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
+.podium-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.podium-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  text-align: center;
+  padding: 0.75rem 0.6rem;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.podium-card.empty {
+  opacity: 0.65;
+}
+
+.podium-gold {
+  min-height: 150px;
+  border-color: rgba(251, 191, 36, 0.7);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3);
+}
+
+.podium-silver {
+  min-height: 132px;
+  border-color: rgba(148, 163, 184, 0.65);
+}
+
+.podium-bronze {
+  min-height: 122px;
+  border-color: rgba(251, 146, 60, 0.65);
+}
+
+.podium-place {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.podium-name {
+  font-size: 0.93rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.podium-votes {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
 .results-list {
   display: flex;
   flex-direction: column;
@@ -633,6 +733,18 @@ body > * {
   position: relative;
   height: 280px;
   margin-top: 2rem;
+}
+
+@media (max-width: 640px) {
+  .podium-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .podium-gold,
+  .podium-silver,
+  .podium-bronze {
+    min-height: 110px;
+  }
 }
 
 /* Admin */
