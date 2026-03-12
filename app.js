@@ -176,9 +176,20 @@
   // ---------- Vote page ----------
   let voteState = { projects: [], myVotes: [], selected: new Set() };
 
+  function shuffleProjects(list) {
+    const arr = list.slice();
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = arr[i];
+      arr[i] = arr[j];
+      arr[j] = tmp;
+    }
+    return arr;
+  }
+
   function loadProjects() {
     if (!db) {
-      voteState.projects = useLiveOnly ? [] : MOCK_PROJECTS.slice();
+      voteState.projects = useLiveOnly ? [] : shuffleProjects(MOCK_PROJECTS);
       return Promise.resolve();
     }
     return db.collection('projects')
@@ -186,11 +197,10 @@
       .then(snap => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         const fromDb = list
-          .filter(p => p.isActive !== false)
-          .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-        voteState.projects = fromDb.length > 0 ? fromDb : (useLiveOnly ? [] : MOCK_PROJECTS.slice());
+          .filter(p => p.isActive !== false);
+        voteState.projects = fromDb.length > 0 ? shuffleProjects(fromDb) : (useLiveOnly ? [] : shuffleProjects(MOCK_PROJECTS));
       })
-      .catch(() => { voteState.projects = useLiveOnly ? [] : MOCK_PROJECTS.slice(); });
+      .catch(() => { voteState.projects = useLiveOnly ? [] : shuffleProjects(MOCK_PROJECTS); });
   }
 
   function loadMyVotes() {
