@@ -162,34 +162,91 @@
     const scenes = [
       {
         title: 'Bear on a monocycle!',
-        subtitle: 'Pink tutu + juggling stars celebrate your vote.',
-        icons: ['🐻', '🩰', '🛞', '🤹', '✨', '🌸'],
+        subtitle: 'Pink tutu acrobatics approved your vote.',
+        characters: ['bear-mono', 'cat-skater'],
         tone: 'pink',
         motion: 'spin'
       },
       {
-        title: 'Cosmic flamingo disco!',
-        subtitle: 'A glitter tornado says: thank you for voting.',
-        icons: ['🦩', '🪩', '🌈', '✨', '🎉', '🫧'],
+        title: 'Cosmic character disco!',
+        subtitle: 'Neon creatures are dancing for your vote.',
+        characters: ['cat-skater', 'octo-jazz'],
         tone: 'violet',
         motion: 'wave'
       },
       {
         title: 'Robot llama parade!',
-        subtitle: 'Neon confetti and tiny rockets everywhere.',
-        icons: ['🤖', '🦙', '🚀', '🎊', '⚡', '💫'],
+        subtitle: 'Chrome fur and micro rockets celebrate your pick.',
+        characters: ['llama-bot', 'bear-mono'],
         tone: 'blue',
         motion: 'bounce'
       },
       {
         title: 'Octopus jazz ballet!',
-        subtitle: 'Eight arms, one trumpet, maximum chaos.',
-        icons: ['🐙', '🎺', '🕺', '🎵', '🫶', '🎇'],
+        subtitle: 'Abstract choreography unlocked by your vote.',
+        characters: ['octo-jazz', 'llama-bot'],
         tone: 'teal',
         motion: 'float'
       }
     ];
     return scenes[Math.floor(Math.random() * scenes.length)];
+  }
+
+  function renderFunCharacter(kind) {
+    if (kind === 'bear-mono') {
+      return (
+        '<div class="fun-char char-bear-mono">' +
+          '<div class="char-shadow"></div>' +
+          '<div class="bear-wheel"></div>' +
+          '<div class="bear-tutu"></div>' +
+          '<div class="bear-body"></div>' +
+          '<div class="bear-head">' +
+            '<span class="bear-ear bear-ear-left"></span><span class="bear-ear bear-ear-right"></span>' +
+            '<span class="bear-eye bear-eye-left"></span><span class="bear-eye bear-eye-right"></span>' +
+          '</div>' +
+          '<div class="bear-arm bear-arm-left"></div><div class="bear-arm bear-arm-right"></div>' +
+          '<span class="juggle-ball juggle-ball-1"></span><span class="juggle-ball juggle-ball-2"></span><span class="juggle-ball juggle-ball-3"></span>' +
+        '</div>'
+      );
+    }
+    if (kind === 'cat-skater') {
+      return (
+        '<div class="fun-char char-cat-skater">' +
+          '<div class="char-shadow"></div>' +
+          '<div class="cat-board"></div>' +
+          '<span class="board-wheel board-wheel-left"></span><span class="board-wheel board-wheel-right"></span>' +
+          '<div class="cat-body"></div>' +
+          '<div class="cat-head">' +
+            '<span class="cat-ear cat-ear-left"></span><span class="cat-ear cat-ear-right"></span>' +
+            '<span class="cat-visor"></span>' +
+          '</div>' +
+          '<div class="cat-tail"></div>' +
+        '</div>'
+      );
+    }
+    if (kind === 'llama-bot') {
+      return (
+        '<div class="fun-char char-llama-bot">' +
+          '<div class="char-shadow"></div>' +
+          '<div class="llama-rocket"></div>' +
+          '<div class="llama-body"></div>' +
+          '<div class="llama-neck"></div>' +
+          '<div class="llama-head">' +
+            '<span class="llama-ear llama-ear-left"></span><span class="llama-ear llama-ear-right"></span>' +
+            '<span class="llama-eye"></span>' +
+          '</div>' +
+          '<span class="llama-leg llama-leg-1"></span><span class="llama-leg llama-leg-2"></span>' +
+        '</div>'
+      );
+    }
+    return (
+      '<div class="fun-char char-octo-jazz">' +
+        '<div class="char-shadow"></div>' +
+        '<div class="octo-head"><span class="octo-eye octo-eye-left"></span><span class="octo-eye octo-eye-right"></span></div>' +
+        '<span class="octo-arm octo-arm-1"></span><span class="octo-arm octo-arm-2"></span><span class="octo-arm octo-arm-3"></span><span class="octo-arm octo-arm-4"></span>' +
+        '<div class="octo-trumpet"></div>' +
+      '</div>'
+    );
   }
 
   function showVoteFunAnimation() {
@@ -203,8 +260,9 @@
         '<p class="vote-fun-kicker">Vote accepted!</p>' +
         '<h3>' + escapeHtml(scene.title) + '</h3>' +
         '<p class="vote-fun-subtitle">' + escapeHtml(scene.subtitle) + '</p>' +
-        '<div class="vote-fun-icons">' +
-          scene.icons.map(function (icon) { return '<span class="vote-fun-icon">' + icon + '</span>'; }).join('') +
+        '<div class="vote-fun-stage">' +
+          '<span class="fun-spark fun-spark-1"></span><span class="fun-spark fun-spark-2"></span><span class="fun-spark fun-spark-3"></span><span class="fun-spark fun-spark-4"></span>' +
+          scene.characters.map(function (kind) { return renderFunCharacter(kind); }).join('') +
         '</div>' +
       '</div>';
     clearTimeout(overlay._hideTimer);
