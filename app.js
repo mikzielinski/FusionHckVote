@@ -14,6 +14,7 @@
   const VOTING_START_KEY = 'fusionVotingStartAt';
   const VOTING_END_KEY = 'fusionVotingEndAt';
   const TIE_BREAK_WINNER_KEY = 'fusionTieBreakWinnerProjectId';
+  const FUN_ANIMATIONS_ENABLED_KEY = 'fusionFunVoteAnimationsEnabled';
   const MAX_VOTES = 1;
   const ADMIN_KEY = 'fusionAdminUnlocked';
   const CONFIG_DOC = 'app';
@@ -24,6 +25,7 @@
   let votingStartAtMs = null;
   let votingEndAtMs = null;
   let tieBreakWinnerProjectId = null;
+  let funVoteAnimationsEnabled = true;
   let adminProjectsCache = [];
 
   function getVoterId() {
@@ -156,6 +158,61 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  function getRandomFunScene() {
+    const scenes = [
+      {
+        title: 'Bear on a monocycle!',
+        subtitle: 'Pink tutu + juggling stars celebrate your vote.',
+        icons: ['🐻', '🩰', '🛞', '🤹', '✨', '🌸'],
+        tone: 'pink',
+        motion: 'spin'
+      },
+      {
+        title: 'Cosmic flamingo disco!',
+        subtitle: 'A glitter tornado says: thank you for voting.',
+        icons: ['🦩', '🪩', '🌈', '✨', '🎉', '🫧'],
+        tone: 'violet',
+        motion: 'wave'
+      },
+      {
+        title: 'Robot llama parade!',
+        subtitle: 'Neon confetti and tiny rockets everywhere.',
+        icons: ['🤖', '🦙', '🚀', '🎊', '⚡', '💫'],
+        tone: 'blue',
+        motion: 'bounce'
+      },
+      {
+        title: 'Octopus jazz ballet!',
+        subtitle: 'Eight arms, one trumpet, maximum chaos.',
+        icons: ['🐙', '🎺', '🕺', '🎵', '🫶', '🎇'],
+        tone: 'teal',
+        motion: 'float'
+      }
+    ];
+    return scenes[Math.floor(Math.random() * scenes.length)];
+  }
+
+  function showVoteFunAnimation() {
+    if (!funVoteAnimationsEnabled) return;
+    const overlay = document.getElementById('vote-fun-overlay');
+    if (!overlay) return;
+    const scene = getRandomFunScene();
+    overlay.className = 'vote-fun-overlay tone-' + scene.tone + ' motion-' + scene.motion + ' active';
+    overlay.innerHTML =
+      '<div class="vote-fun-card" role="status" aria-live="polite">' +
+        '<p class="vote-fun-kicker">Vote accepted!</p>' +
+        '<h3>' + escapeHtml(scene.title) + '</h3>' +
+        '<p class="vote-fun-subtitle">' + escapeHtml(scene.subtitle) + '</p>' +
+        '<div class="vote-fun-icons">' +
+          scene.icons.map(function (icon) { return '<span class="vote-fun-icon">' + icon + '</span>'; }).join('') +
+        '</div>' +
+      '</div>';
+    clearTimeout(overlay._hideTimer);
+    overlay._hideTimer = setTimeout(function () {
+      overlay.classList.remove('active');
+    }, 1800);
+  }
+
   function buildTeamKey(project) {
     const team = (project.team || '').trim().toLowerCase();
     if (team) return 'team:' + team;
@@ -228,6 +285,7 @@
       votingStartAtMs = parseConfigDateValue(localStorage.getItem(VOTING_START_KEY));
       votingEndAtMs = parseConfigDateValue(localStorage.getItem(VOTING_END_KEY));
       tieBreakWinnerProjectId = localStorage.getItem(TIE_BREAK_WINNER_KEY) || null;
+      funVoteAnimationsEnabled = localStorage.getItem(FUN_ANIMATIONS_ENABLED_KEY) !== 'false';
       return Promise.resolve();
     }
     return db.collection('config').doc(CONFIG_DOC).get()
@@ -237,6 +295,7 @@
           votingStartAtMs = null;
           votingEndAtMs = null;
           tieBreakWinnerProjectId = null;
+          funVoteAnimationsEnabled = true;
           return;
         }
         const data = doc.data() || {};
@@ -244,12 +303,14 @@
         votingStartAtMs = parseConfigDateValue(data.votingStartAt);
         votingEndAtMs = parseConfigDateValue(data.votingEndAt);
         tieBreakWinnerProjectId = (typeof data.tieBreakWinnerProjectId === 'string' && data.tieBreakWinnerProjectId) ? data.tieBreakWinnerProjectId : null;
+        funVoteAnimationsEnabled = data.funVoteAnimationsEnabled !== false;
       })
       .catch(() => {
         votingEnabled = true;
         votingStartAtMs = null;
         votingEndAtMs = null;
         tieBreakWinnerProjectId = null;
+        funVoteAnimationsEnabled = true;
       });
   }
 
@@ -287,6 +348,17 @@
     }
     return db.collection('config').doc(CONFIG_DOC).set({
       tieBreakWinnerProjectId: tieBreakWinnerProjectId
+    }, { merge: true });
+  }
+
+  function setFunVoteAnimationsEnabled(enabled) {
+    funVoteAnimationsEnabled = enabled;
+    if (!db) {
+      localStorage.setItem(FUN_ANIMATIONS_ENABLED_KEY, enabled ? 'true' : 'false');
+      return Promise.resolve();
+    }
+    return db.collection('config').doc(CONFIG_DOC).set({
+      funVoteAnimationsEnabled: enabled
     }, { merge: true });
   }
 
@@ -489,7 +561,10 @@
 
   function addVoteInFirestore(projectId) {
     if (!db) {
-      if (!useLiveOnly) localStorage.setItem(MOCK_VOTES_KEY, JSON.stringify([...voteState.selected]));
+      if (!useLiveOnly) {
+        localStorage.setItem(MOCK_VOTES_KEY, JSON.stringify([...voteState.selected]));
+        showVoteFunAnimation();
+      }
       else showToast('Connect Firebase to save votes.', 'error');
       return;
     }
@@ -499,7 +574,10 @@
       projectId,
       voterId,
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(() => loadMyVotes().then(() => renderVotePage()))
+    }).then(() => loadMyVotes().then(() => {
+      renderVotePage();
+      showVoteFunAnimation();
+    }))
       .catch(() => { voteState.selected.delete(projectId); renderVotePage(); showToast('Failed to save vote', 'error'); });
   }
 
@@ -1249,6 +1327,8 @@
           '<p class="admin-voting-status">Voting is <strong>' + (votingWindow.allowed ? 'open' : 'closed') + '</strong>. Manual switch is <strong>' + (votingEnabled ? 'enabled' : 'disabled') + '</strong>.</p>' +
           '<p class="admin-voting-status">' + escapeHtml(scheduleText) + '</p>' +
           '<button type="button" class="btn ' + (votingEnabled ? 'btn-secondary' : 'btn-primary') + ' admin-toggle-voting" id="admin-toggle-voting">' + (votingEnabled ? 'Disable voting' : 'Enable voting') + '</button>' +
+          '<p class="admin-voting-status">Funny vote animations are <strong>' + (funVoteAnimationsEnabled ? 'enabled' : 'disabled') + '</strong>.</p>' +
+          '<button type="button" class="btn ' + (funVoteAnimationsEnabled ? 'btn-secondary' : 'btn-primary') + '" id="admin-toggle-fun-animations">' + (funVoteAnimationsEnabled ? 'Disable funny animations' : 'Enable funny animations') + '</button>' +
           '<div class="admin-schedule-grid">' +
             '<label for="admin-voting-start">Start date/time</label>' +
             '<input type="datetime-local" id="admin-voting-start" value="' + escapeAttr(toDatetimeInputValue(votingStartAtMs)) + '" />' +
@@ -1284,6 +1364,13 @@
     document.getElementById('admin-toggle-voting')?.addEventListener('click', () => {
       setVotingEnabled(!votingEnabled).then(() => {
         showToast(votingEnabled ? 'Voting enabled' : 'Voting disabled');
+        loadAdminData();
+      }).catch(() => showToast('Failed to update', 'error'));
+    });
+
+    document.getElementById('admin-toggle-fun-animations')?.addEventListener('click', () => {
+      setFunVoteAnimationsEnabled(!funVoteAnimationsEnabled).then(() => {
+        showToast(funVoteAnimationsEnabled ? 'Funny animations enabled' : 'Funny animations disabled');
         loadAdminData();
       }).catch(() => showToast('Failed to update', 'error'));
     });

@@ -62,7 +62,7 @@ Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote f
   `viewId`, `projectId`, `voterId`, `timestamp`
 
 - **config/app** (single document)  
-  `votingEnabled` (boolean), `votingStartAt` (timestamp|null), `votingEndAt` (timestamp|null), `tieBreakWinnerProjectId` (string|null) — enable/disable and schedule window, plus optional random tie-break winner selection managed by judges.
+  `votingEnabled` (boolean), `votingStartAt` (timestamp|null), `votingEndAt` (timestamp|null), `tieBreakWinnerProjectId` (string|null), `funVoteAnimationsEnabled` (boolean) — enable/disable and schedule window, optional random tie-break winner selection, and toggle fun vote animations.
 
 ## Firestore rules (example)
 

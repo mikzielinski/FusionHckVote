@@ -993,6 +993,140 @@ body > * {
 .toast.success { border-color: var(--voted-border); }
 .toast.error { border-color: var(--fusion-pink); }
 
+/* Funny vote animation overlay */
+.vote-fun-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.vote-fun-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.vote-fun-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(1px);
+}
+
+.vote-fun-card {
+  position: relative;
+  width: min(92vw, 460px);
+  border-radius: 20px;
+  padding: 1rem 1.1rem 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.35);
+  text-align: center;
+  animation: fun-card-pop 0.24s ease;
+}
+
+.vote-fun-overlay.tone-pink .vote-fun-card {
+  background: linear-gradient(145deg, rgba(244, 114, 182, 0.42), rgba(244, 63, 94, 0.32));
+}
+
+.vote-fun-overlay.tone-violet .vote-fun-card {
+  background: linear-gradient(145deg, rgba(168, 85, 247, 0.42), rgba(99, 102, 241, 0.32));
+}
+
+.vote-fun-overlay.tone-blue .vote-fun-card {
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.42), rgba(14, 165, 233, 0.32));
+}
+
+.vote-fun-overlay.tone-teal .vote-fun-card {
+  background: linear-gradient(145deg, rgba(20, 184, 166, 0.42), rgba(34, 197, 94, 0.30));
+}
+
+.vote-fun-kicker {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #fff1f2;
+}
+
+.vote-fun-card h3 {
+  margin: 0.35rem 0 0.2rem;
+  font-size: 1.4rem;
+  color: #fff7ed;
+}
+
+.vote-fun-subtitle {
+  margin: 0 0 0.8rem 0;
+  font-size: 0.92rem;
+  color: #f8fafc;
+}
+
+.vote-fun-icons {
+  display: flex;
+  justify-content: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.vote-fun-icon {
+  font-size: 2rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  animation-duration: 1s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+.vote-fun-overlay.motion-spin .vote-fun-icon { animation-name: fun-spin; }
+.vote-fun-overlay.motion-wave .vote-fun-icon { animation-name: fun-wave; }
+.vote-fun-overlay.motion-bounce .vote-fun-icon { animation-name: fun-bounce; }
+.vote-fun-overlay.motion-float .vote-fun-icon { animation-name: fun-float; }
+
+.vote-fun-icon:nth-child(2n) { animation-delay: 0.12s; }
+.vote-fun-icon:nth-child(3n) { animation-delay: 0.22s; }
+.vote-fun-icon:nth-child(4n) { animation-delay: 0.32s; }
+
+@keyframes fun-card-pop {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fun-spin {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(18deg) translateY(-4px); }
+}
+
+@keyframes fun-wave {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-6px) rotate(-10deg); }
+  75% { transform: translateY(-4px) rotate(10deg); }
+}
+
+@keyframes fun-bounce {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-8px); }
+  60% { transform: translateY(-2px); }
+}
+
+@keyframes fun-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-7px) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-fun-card,
+  .vote-fun-icon {
+    animation: none !important;
+  }
+}
+
 /* Modal */
 .modal {
   position: fixed;
