@@ -161,30 +161,38 @@
   function getRandomFunScene() {
     const scenes = [
       {
-        title: 'Bear on a monocycle!',
-        subtitle: 'Pink tutu acrobatics approved your vote.',
-        characters: ['bear-mono', 'cat-skater'],
+        title: 'Monocycle Stardust Show',
+        cast: [
+          { kind: 'bear-mono', name: 'Bruno' },
+          { kind: 'cat-skater', name: 'Mila' }
+        ],
         tone: 'pink',
         motion: 'spin'
       },
       {
-        title: 'Cosmic character disco!',
-        subtitle: 'Neon creatures are dancing for your vote.',
-        characters: ['cat-skater', 'octo-jazz'],
+        title: 'Cosmic Disco Drop',
+        cast: [
+          { kind: 'cat-skater', name: 'Mila' },
+          { kind: 'octo-jazz', name: 'Ozzy' }
+        ],
         tone: 'violet',
         motion: 'wave'
       },
       {
-        title: 'Robot llama parade!',
-        subtitle: 'Chrome fur and micro rockets celebrate your pick.',
-        characters: ['llama-bot', 'bear-mono'],
+        title: 'Robot Llama Parade',
+        cast: [
+          { kind: 'llama-bot', name: 'Rufi' },
+          { kind: 'bear-mono', name: 'Bruno' }
+        ],
         tone: 'blue',
         motion: 'bounce'
       },
       {
-        title: 'Octopus jazz ballet!',
-        subtitle: 'Abstract choreography unlocked by your vote.',
-        characters: ['octo-jazz', 'llama-bot'],
+        title: 'Octopus Jazz Ballet',
+        cast: [
+          { kind: 'octo-jazz', name: 'Ozzy' },
+          { kind: 'llama-bot', name: 'Rufi' }
+        ],
         tone: 'teal',
         motion: 'float'
       }
@@ -259,10 +267,12 @@
       '<div class="vote-fun-card" role="status" aria-live="polite">' +
         '<p class="vote-fun-kicker">Vote accepted!</p>' +
         '<h3>' + escapeHtml(scene.title) + '</h3>' +
-        '<p class="vote-fun-subtitle">' + escapeHtml(scene.subtitle) + '</p>' +
         '<div class="vote-fun-stage">' +
           '<span class="fun-spark fun-spark-1"></span><span class="fun-spark fun-spark-2"></span><span class="fun-spark fun-spark-3"></span><span class="fun-spark fun-spark-4"></span>' +
-          scene.characters.map(function (kind) { return renderFunCharacter(kind); }).join('') +
+          scene.cast.map(function (actor) { return renderFunCharacter(actor.kind); }).join('') +
+        '</div>' +
+        '<div class="vote-fun-cast">' +
+          scene.cast.map(function (actor) { return '<span class="vote-fun-name">' + escapeHtml(actor.name) + '</span>'; }).join('') +
         '</div>' +
       '</div>';
     clearTimeout(overlay._hideTimer);
