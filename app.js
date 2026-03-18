@@ -430,6 +430,22 @@
     }, { merge: true });
   }
 
+  function clearAllVotesInDb() {
+    if (!db) return Promise.reject(new Error('No database'));
+    const BATCH_SIZE = 500;
+    return db.collection('votes').get().then(snap => {
+      if (snap.empty) return Promise.resolve();
+      const docs = snap.docs;
+      const batches = [];
+      for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        docs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+        batches.push(batch.commit());
+      }
+      return Promise.all(batches);
+    });
+  }
+
   const router = {
     routes: {},
     current: '',
@@ -800,19 +816,25 @@
       list.addEventListener('click', e => {
         const card = e.target.closest('.project-card');
         if (!card || card.classList.contains('disabled')) return;
-        if (e.target.classList.contains('watch-video')) {
+        const watchBtn = e.target.closest('.watch-video');
+        if (watchBtn) {
           e.preventDefault();
           e.stopPropagation();
-          openVideoModal(e.target.getAttribute('data-video'));
+          openVideoModal(watchBtn.getAttribute('data-video'));
           return;
         }
-        if (e.target.classList.contains('show-more-desc')) {
+        const showMoreBtn = e.target.closest('.show-more-desc');
+        if (showMoreBtn) {
           e.preventDefault();
           e.stopPropagation();
-          const btn = e.target;
           const expanded = card.classList.toggle('description-expanded');
-          btn.setAttribute('aria-expanded', expanded);
-          btn.textContent = expanded ? 'Pokaż mniej' : 'Pokaż więcej';
+          showMoreBtn.setAttribute('aria-expanded', expanded);
+          showMoreBtn.textContent = expanded ? 'Pokaż mniej' : 'Pokaż więcej';
+          return;
+        }
+        if (e.target.closest('.description-wrap')) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
         const projectId = card.getAttribute('data-project-id');
@@ -1435,6 +1457,7 @@
         '<div class="admin-section admin-stats-summary">' +
           '<p class="admin-stats-line"><strong>Unique devices (voters):</strong> ' + uniqueDevicesTotal + ' &nbsp;|&nbsp; <strong>Total votes:</strong> ' + totalVotes + '</p>' +
           '<p class="admin-stats-hint">Each device can vote for 1 project. Votes are tied to device ID (localStorage).</p>' +
+          (liveOnlyNoDb ? '' : '<p class="admin-stats-actions"><button type="button" class="btn btn-secondary admin-clear-votes" id="admin-clear-votes">Clear all votes in DB</button></p>') +
         '</div>' +
         '<div class="admin-section">' +
           '<h2>Projects</h2>' +
@@ -1493,6 +1516,16 @@
       setVotingSchedule(null, null)
         .then(() => { showToast('Voting schedule cleared'); loadAdminData(); })
         .catch(() => showToast('Failed to clear schedule', 'error'));
+    });
+
+    document.getElementById('admin-clear-votes')?.addEventListener('click', () => {
+      if (!confirm('Delete all votes in the database? This cannot be undone.')) return;
+      const btn = document.getElementById('admin-clear-votes');
+      if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+      clearAllVotesInDb()
+        .then(() => { showToast('All votes cleared'); loadAdminData(); })
+        .catch(() => showToast('Failed to clear votes', 'error'))
+        .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Clear all votes in DB'; } });
     });
 
     document.getElementById('admin-tbody')?.addEventListener('click', (e) => {
