@@ -53,7 +53,8 @@ Mobile-first voting web app for the UiPath Fusion hackathon. Participants vote f
 ## Firestore collections
 
 - **projects**  
-  `projectId`, `name`, `description`, `team`, `teamToken`, `videoUrl`, `thumbnailUrl`, `createdAt`, `isActive`
+  `projectId`, `name`, `description`, `team`, `teamToken`, `videoUrl`, `thumbnailUrl`, `thumbnailDataUrl`, `createdAt`, `isActive`  
+  **Miniatury (bez kosztów — GitHub):** dodaj pliki do `images/projects/` w repo, wypchnij na GitHub. W formularzu: „Adres URL obrazu” i wklej URL (np. `.../images/projects/nazwa.jpg`) lub „Wgraj plik” — zapis w Firestore, limit 1 MB.
 
 - **votes**  
   `voteId`, `projectId`, `voterId`, `timestamp`

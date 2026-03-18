@@ -1,5 +1,9 @@
 # Miniatury projektów (thumbnails)
 
-**Przez formularz:** W panelu admina (Add project / Edit project) przy wyborze **Upload file** miniatura jest automatycznie kompresowana i zapisywana w **Firebase Storage** (katalog `project-thumbnails/`). W Firestore zapisywany jest tylko URL — bez limitu rozmiaru dokumentu.
+**Rekomendowane:** Dodaj tutaj pliki (PNG, JPG) i wypchnij na GitHub. W formularzu projektu (Add/Edit) wybierz **Adres URL obrazu** i wklej URL, np.:
 
-**Opcjonalnie z repozytorium:** Możesz też dodać tutaj pliki (PNG, JPG) i podać ich URL w formularzu (pole **Image URL**). Po deployu na GitHub Pages: `https://<user>.github.io/FusionHckVote/images/projects/nazwa.png`
+`https://<user>.github.io/FusionHckVote/images/projects/nazwa.jpg`
+
+Obrazy są wtedy serwowane z GitHub Pages — bez dodatkowych kosztów i bez limitu rozmiaru dokumentu Firestore.
+
+**Opcja „Wgraj plik”:** miniatura jest kompresowana i zapisywana w Firestore (`thumbnailDataUrl`). Dla większych plików lepiej użyć URL z tego folderu.

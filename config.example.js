@@ -12,5 +12,8 @@ window.FUSION_VOTE_CONFIG = {
     appId: "YOUR_APP_ID"
   },
   // Simple password for Admin Panel (no backend - store in config)
-  adminPassword: "change-me"
+  adminPassword: "change-me",
+  // Opcjonalnie: URL API do zapisu miniaturek w repo GitHub (np. Vercel serverless).
+  // Gdy ustawione, „Wgraj plik” w formularzu projektu wysyła obraz do API, które dodaje plik do images/projects/ w repo.
+  // uploadImageApiUrl: "https://twoja-aplikacja.vercel.app/api/upload-thumbnail"
 };

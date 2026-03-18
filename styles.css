@@ -1650,6 +1650,13 @@ body > * {
   color: var(--text-secondary);
 }
 
+.thumbnail-hint code {
+  font-size: 0.95em;
+  padding: 0.1em 0.3em;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
 .thumbnail-radios {
   display: flex;
   gap: 1rem;

@@ -1751,6 +1751,19 @@
   const THUMB_MIN_WIDTH = 200;
   const STORAGE_THUMB_PATH = 'project-thumbnails';
 
+  function uploadThumbnailToGitHub(dataUrl, filename) {
+    var apiUrl = (CONFIG.uploadImageApiUrl || '').trim();
+    if (!apiUrl) return Promise.reject(new Error('uploadImageApiUrl not set'));
+    return fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl, filename: filename || ('thumb_' + Date.now() + '.jpg') })
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || j.detail || 'Upload failed'); }).catch(function () { throw new Error('Upload failed ' + r.status); });
+      return r.json();
+    }).then(function (j) { return j.url; });
+  }
+
   function dataUrlToBlob(dataUrl) {
     return fetch(dataUrl).then(function (r) { return r.blob(); });
   }
@@ -1860,12 +1873,22 @@
         if (fileInput?.files?.length) {
           const file = fileInput.files[0];
           if (!file.type.startsWith('image/')) { showToast('Please choose an image file', 'error'); return; }
+          const projectId = id || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
           const reader = new FileReader();
           reader.onload = function () {
             const raw = reader.result;
             compressImageDataUrl(raw, THUMB_DATA_URL_MAX_BYTES)
               .then(function (compressed) {
-                saveProjectForm(id, name, null, compressed);
+                var apiUrl = (CONFIG.uploadImageApiUrl || '').trim();
+                if (apiUrl) {
+                  return uploadThumbnailToGitHub(compressed, projectId + '.jpg')
+                    .then(function (url) { saveProjectForm(id, name, url, null, projectId); })
+                    .catch(function (err) {
+                      showToast(err && err.message ? err.message : 'Upload do repo nie powiódł się. Zapisuję w bazie.', 'error');
+                      saveProjectForm(id, name, null, compressed, projectId);
+                    });
+                }
+                saveProjectForm(id, name, null, compressed, projectId);
               })
               .catch(function (err) {
                 showToast(err && err.message ? err.message : 'Obraz za duży', 'error');
@@ -1883,8 +1906,9 @@
             const file = fileInput.files[0];
             const reader = new FileReader();
             reader.onload = function () {
+              var pid = id || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
               compressImageDataUrl(reader.result, THUMB_DATA_URL_MAX_BYTES)
-                .then(function (compressed) { saveProjectForm(id, name, null, compressed); })
+                .then(function (compressed) { saveProjectForm(id, name, null, compressed, pid); })
                 .catch(function (err) { showToast(err && err.message ? err.message : 'Obraz za duży', 'error'); });
             };
             reader.readAsDataURL(file);
@@ -1892,10 +1916,10 @@
           }
         }
       }
-      saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl);
+      saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl, undefined);
     });
 
-    function saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl) {
+    function saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl, generatedId) {
       if (useLiveOnly && !db) {
         showToast('Connect Firebase to manage projects.', 'error');
         return;
@@ -1905,23 +1929,24 @@
         showToast('Obraz jest za duży. Użyj mniejszego pliku lub URL.', 'error');
         return;
       }
+      var docId = id || generatedId || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
       const baseData = {
         name: name || '',
         team: team || '',
         description: (document.getElementById('project-form-description').value || '').trim(),
         videoUrl: (document.getElementById('project-form-videoUrl').value || '').trim() || null,
-        teamToken: resolveTeamTokenForProject(id, team)
+        teamToken: resolveTeamTokenForProject(docId, team)
       };
-      function doSave(docId, thumbUrl, thumbDataUrl, isNew) {
+      function doSave(projectDocId, thumbUrl, thumbDataUrl, isNew) {
         var data = Object.assign({}, baseData, {
           thumbnailUrl: thumbUrl || null,
           thumbnailDataUrl: thumbDataUrl || null
         });
-        if (!isNew && docId) {
+        if (!isNew && projectDocId) {
           if (db) {
-            db.collection('projects').doc(docId).update(data).then(() => { showToast('Updated'); closeProjectFormModal(); loadAdminData(); }).catch(function (err) { showToast(err && err.message ? err.message : 'Failed', 'error'); });
+            db.collection('projects').doc(projectDocId).update(data).then(() => { showToast('Updated'); closeProjectFormModal(); loadAdminData(); }).catch(function (err) { showToast(err && err.message ? err.message : 'Failed', 'error'); });
           } else {
-            var proj = adminMockProjects.find(function (p) { return p.id === docId; });
+            var proj = adminMockProjects.find(function (p) { return p.id === projectDocId; });
             if (proj) {
               proj.name = data.name;
               proj.team = data.team;
@@ -1937,7 +1962,7 @@
           return;
         }
         if (db) {
-          var newId = docId || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
+          var newId = projectDocId || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
           db.collection('projects').doc(newId).set(Object.assign({}, data, { createdAt: firebase.firestore.FieldValue.serverTimestamp(), isActive: true })).then(() => { showToast('Project added'); closeProjectFormModal(); loadAdminData(); }).catch(function (err) { showToast(err && err.message ? err.message : 'Failed to add', 'error'); });
         } else {
           var mockId = 'mock-' + Date.now();
@@ -1950,16 +1975,7 @@
         }
       }
       var isNew = !id;
-      if (db && thumbnailDataUrl && typeof firebase !== 'undefined' && firebase.storage) {
-        var projectId = id || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
-        uploadThumbnailToStorage(projectId, thumbnailDataUrl)
-          .then(function (url) { doSave(projectId, url, null, isNew); })
-          .catch(function (err) {
-            showToast(err && err.message ? err.message : 'Upload miniatury nie powiódł się', 'error');
-          });
-        return;
-      }
-      doSave(id, thumbnailUrl, thumbnailDataUrl, isNew);
+      doSave(docId, thumbnailUrl, thumbnailDataUrl, isNew);
     }
   }
 
