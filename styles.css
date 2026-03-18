@@ -326,11 +326,44 @@ body > * {
   font-weight: 500;
 }
 
+.project-card .description-wrap {
+  margin-bottom: 0.5rem;
+}
+
 .project-card .description {
   font-size: 0.9rem;
   color: var(--text-secondary);
   line-height: 1.4;
-  margin-bottom: 0.5rem;
+}
+
+.project-card .description-wrap .description-full {
+  display: none;
+}
+
+.project-card.description-expanded .description-wrap .description-preview {
+  display: none;
+}
+
+.project-card.description-expanded .description-wrap .description-full {
+  display: block;
+}
+
+.project-card .show-more-desc {
+  margin-top: 0.35rem;
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fusion-teal);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s;
+}
+
+.project-card .show-more-desc:hover {
+  color: var(--fusion-orange);
 }
 
 .project-card .badge {

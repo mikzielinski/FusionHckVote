@@ -726,9 +726,12 @@
     const warning = document.getElementById('vote-warning');
     if (warning) warning.classList.toggle('visible', false);
 
+    const INITIAL_DESC_LEN = 220;
     const cards = voteState.projects.map(p => {
       const voted = voteState.selected.has(p.id);
-      const desc = (p.description || '').slice(0, 120) + ((p.description || '').length > 120 ? '…' : '');
+      const fullDesc = p.description || '';
+      const needsExpand = fullDesc.length > INITIAL_DESC_LEN;
+      const shortDesc = needsExpand ? fullDesc.slice(0, INITIAL_DESC_LEN) + '…' : fullDesc;
       const thumbSrc = p.thumbnailDataUrl || p.thumbnailUrl || '';
       const thumbHtml = thumbSrc
         ? '<div class="project-card-thumb"><img src="' + escapeAttr(thumbSrc) + '" alt="" loading="lazy" /></div>'
@@ -737,13 +740,25 @@
         ? '<button type="button" class="watch-video" data-video="' + escapeAttr(p.videoUrl) + '">Watch demo</button>'
         : '';
       const cardDisabled = votingClosed || p.isActive === false;
+      let descHtml = '';
+      if (fullDesc) {
+        if (needsExpand) {
+          descHtml = '<div class="description-wrap">' +
+            '<div class="description description-preview">' + escapeHtml(shortDesc) + '</div>' +
+            '<div class="description description-full" aria-hidden="true">' + escapeHtml(fullDesc) + '</div>' +
+            '<button type="button" class="show-more-desc" aria-expanded="false">Pokaż więcej</button>' +
+            '</div>';
+        } else {
+          descHtml = '<div class="description-wrap"><div class="description">' + escapeHtml(fullDesc) + '</div></div>';
+        }
+      }
       return (
         '<article class="project-card' + (voted ? ' voted' : '') + (cardDisabled ? ' disabled' : '') + (votingClosed ? ' voting-closed' : '') + '" data-project-id="' + escapeAttr(p.id) + '" data-project-name="' + escapeAttr(p.name || '') + '">' +
           thumbHtml +
           '<div class="project-card-body">' +
           '<div class="name">' + escapeHtml(p.name || 'Unnamed') + '</div>' +
           (p.team ? '<div class="team">' + escapeHtml(p.team) + '</div>' : '') +
-          (desc ? '<div class="description">' + escapeHtml(desc) + '</div>' : '') +
+          descHtml +
           (videoBtn ? '<div>' + videoBtn + '</div>' : '') +
           '<div class="badge">' + (voted ? 'Voted' : '') + '</div>' +
           '</div>' +
@@ -789,6 +804,15 @@
           e.preventDefault();
           e.stopPropagation();
           openVideoModal(e.target.getAttribute('data-video'));
+          return;
+        }
+        if (e.target.classList.contains('show-more-desc')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = e.target;
+          const expanded = card.classList.toggle('description-expanded');
+          btn.setAttribute('aria-expanded', expanded);
+          btn.textContent = expanded ? 'Pokaż mniej' : 'Pokaż więcej';
           return;
         }
         const projectId = card.getAttribute('data-project-id');
