@@ -287,6 +287,11 @@ body > * {
   display: block;
 }
 
+.project-card-thumb--empty img {
+  object-fit: contain;
+  background: var(--bg-slate);
+}
+
 .project-card-body {
   padding: 1rem 1.25rem 1.25rem;
   display: flex;
@@ -1617,10 +1622,38 @@ body > * {
   padding: 0 0.5rem;
 }
 
+.thumbnail-preview-wrap {
+  margin-bottom: 0.75rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-slate);
+  border: 1px solid var(--card-border);
+  max-height: 140px;
+  display: none;
+}
+
+.thumbnail-preview-wrap.visible {
+  display: block;
+}
+
+.thumbnail-preview-img {
+  width: 100%;
+  max-height: 140px;
+  object-fit: contain;
+  display: block;
+  vertical-align: top;
+}
+
+.thumbnail-hint {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
 .thumbnail-radios {
   display: flex;
   gap: 1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .thumbnail-radios label {

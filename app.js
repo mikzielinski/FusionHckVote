@@ -819,9 +819,10 @@
       const needsExpand = fullDesc.length > INITIAL_DESC_LEN;
       const shortDesc = needsExpand ? fullDesc.slice(0, INITIAL_DESC_LEN) + '…' : fullDesc;
       const thumbSrc = p.thumbnailDataUrl || p.thumbnailUrl || '';
+      const thumbFallback = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'225\'%3E%3Crect fill=\'%23334155\' width=\'400\' height=\'225\'/%3E%3C/svg%3E';
       const thumbHtml = thumbSrc
-        ? '<div class="project-card-thumb"><img src="' + escapeAttr(thumbSrc) + '" alt="" loading="lazy" /></div>'
-        : '';
+        ? '<div class="project-card-thumb"><img src="' + escapeAttr(thumbSrc) + '" alt="" loading="lazy" data-fallback="' + escapeAttr(thumbFallback) + '" /></div>'
+        : '<div class="project-card-thumb project-card-thumb--empty"><img src="' + escapeAttr(thumbFallback) + '" alt="" /></div>';
       const videoBtn = p.videoUrl
         ? '<button type="button" class="watch-video" data-video="' + escapeAttr(p.videoUrl) + '">Watch demo</button>'
         : '';
@@ -883,6 +884,12 @@
 
     const list = document.getElementById('projects-list');
     if (list) {
+      list.querySelectorAll('.project-card-thumb img[data-fallback]').forEach(function (img) {
+        img.addEventListener('error', function () {
+          var f = img.getAttribute('data-fallback');
+          if (f) img.src = f;
+        });
+      });
       list.addEventListener('click', e => {
         const card = e.target.closest('.project-card');
         if (!card || card.classList.contains('disabled')) return;
@@ -1686,12 +1693,14 @@
         thumbUrlInput.value = '';
         thumbFileInput.value = '';
         toggleThumbInputs('file');
+        updateFormThumbPreview(project.thumbnailDataUrl);
       } else {
         thumbUrlRadio.checked = true;
         thumbUrlInput.value = project.thumbnailUrl || '';
         thumbDataInput.value = '';
         thumbFileInput.value = '';
         toggleThumbInputs('url');
+        updateFormThumbPreview(project.thumbnailUrl || '');
       }
     } else {
       titleEl.textContent = 'Add project';
@@ -1700,9 +1709,29 @@
       idInput.value = '';
       thumbDataInput.value = '';
       toggleThumbInputs('url');
+      updateFormThumbPreview('');
     }
     modal.hidden = false;
     document.getElementById('project-form-name')?.focus();
+  }
+
+  function updateFormThumbPreview(src) {
+    var wrap = document.getElementById('project-form-thumb-preview-wrap');
+    var img = document.getElementById('project-form-thumb-preview');
+    if (!wrap || !img) return;
+    if (img._objectUrl) {
+      URL.revokeObjectURL(img._objectUrl);
+      img._objectUrl = null;
+    }
+    if (src && src.length > 0) {
+      img.src = src;
+      wrap.classList.add('visible');
+      wrap.setAttribute('aria-hidden', 'false');
+    } else {
+      img.removeAttribute('src');
+      wrap.classList.remove('visible');
+      wrap.setAttribute('aria-hidden', 'true');
+    }
   }
 
   function closeProjectFormModal() {
@@ -1715,6 +1744,69 @@
     const fileWrap = document.getElementById('thumb-file-wrap');
     if (urlWrap) urlWrap.style.display = type === 'url' ? '' : 'none';
     if (fileWrap) fileWrap.style.display = type === 'file' ? '' : 'none';
+  }
+
+  const THUMB_DATA_URL_MAX_BYTES = 700000;
+  const THUMB_MAX_WIDTH = 800;
+  const THUMB_MIN_WIDTH = 200;
+  const STORAGE_THUMB_PATH = 'project-thumbnails';
+
+  function dataUrlToBlob(dataUrl) {
+    return fetch(dataUrl).then(function (r) { return r.blob(); });
+  }
+
+  function uploadThumbnailToStorage(projectId, dataUrl) {
+    if (typeof firebase === 'undefined' || !firebase.storage) return Promise.reject(new Error('Firebase Storage not available'));
+    var storage = firebase.storage();
+    var path = STORAGE_THUMB_PATH + '/' + projectId + '.jpg';
+    var ref = storage.ref(path);
+    return dataUrlToBlob(dataUrl).then(function (blob) {
+      return ref.put(blob, { contentType: 'image/jpeg' });
+    }).then(function (snapshot) {
+      return snapshot.ref.getDownloadURL ? snapshot.ref.getDownloadURL() : ref.getDownloadURL();
+    });
+  }
+
+  function compressImageDataUrl(dataUrl, maxBytes) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        const nw = img.naturalWidth;
+        const nh = img.naturalHeight;
+        let w = nw;
+        let h = nh;
+        if (w > THUMB_MAX_WIDTH) { h = Math.round((nh * THUMB_MAX_WIDTH) / nw); w = THUMB_MAX_WIDTH; }
+        let lastOk = null;
+        while (w >= THUMB_MIN_WIDTH) {
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const c = canvas.getContext('2d');
+          if (!c) break;
+          c.drawImage(img, 0, 0, w, h);
+          for (let q = 0.85; q >= 0.2; q -= 0.1) {
+            const result = canvas.toDataURL('image/jpeg', q);
+            if (result.length <= maxBytes) { lastOk = result; break; }
+          }
+          if (lastOk) break;
+          w = Math.max(THUMB_MIN_WIDTH, Math.floor(w / 2));
+          h = Math.round((nh * w) / nw);
+        }
+        if (lastOk) { resolve(lastOk); return; }
+        var fb = document.createElement('canvas');
+        fb.width = w;
+        fb.height = h;
+        fb.getContext('2d').drawImage(img, 0, 0, fb.width, fb.height);
+        for (var qq = 0.25; qq >= 0.1; qq -= 0.05) {
+          var r = fb.toDataURL('image/jpeg', qq);
+          if (r.length <= maxBytes) { resolve(r); return; }
+        }
+        resolve(fb.toDataURL('image/jpeg', 0.1));
+      };
+      img.onerror = function () { reject(new Error('Nie można załadować obrazu.')); };
+      img.src = dataUrl;
+    });
   }
 
   function initProjectFormModal() {
@@ -1735,6 +1827,24 @@
     document.getElementById('project-form-thumb-type-url')?.addEventListener('change', function () { toggleThumbInputs('url'); });
     document.getElementById('project-form-thumb-type-file')?.addEventListener('change', function () { toggleThumbInputs('file'); });
 
+    document.getElementById('project-form-thumbnailUrl')?.addEventListener('input', function () {
+      if (form.querySelector('input[name="thumbType"]:checked')?.value === 'url') updateFormThumbPreview(this.value.trim() || '');
+    });
+    document.getElementById('project-form-thumbnailUrl')?.addEventListener('change', function () {
+      if (form.querySelector('input[name="thumbType"]:checked')?.value === 'url') updateFormThumbPreview(this.value.trim() || '');
+    });
+    document.getElementById('project-form-thumbnailFile')?.addEventListener('change', function () {
+      var file = this.files && this.files[0];
+      var wrap = document.getElementById('project-form-thumb-preview-wrap');
+      var img = document.getElementById('project-form-thumb-preview');
+      if (!file) { updateFormThumbPreview(''); return; }
+      if (!file.type.startsWith('image/')) { updateFormThumbPreview(''); return; }
+      if (img && img._objectUrl) URL.revokeObjectURL(img._objectUrl);
+      var url = URL.createObjectURL(file);
+      if (img) { img._objectUrl = url; img.src = url; }
+      if (wrap) { wrap.classList.add('visible'); wrap.setAttribute('aria-hidden', 'false'); }
+    });
+
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -1752,8 +1862,14 @@
           if (!file.type.startsWith('image/')) { showToast('Please choose an image file', 'error'); return; }
           const reader = new FileReader();
           reader.onload = function () {
-            thumbnailDataUrl = reader.result;
-            saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl);
+            const raw = reader.result;
+            compressImageDataUrl(raw, THUMB_DATA_URL_MAX_BYTES)
+              .then(function (compressed) {
+                saveProjectForm(id, name, null, compressed);
+              })
+              .catch(function (err) {
+                showToast(err && err.message ? err.message : 'Obraz za duży', 'error');
+              });
           };
           reader.readAsDataURL(file);
           return;
@@ -1761,6 +1877,20 @@
         if (dataInput?.value) thumbnailDataUrl = dataInput.value;
       } else {
         thumbnailUrl = document.getElementById('project-form-thumbnailUrl').value.trim() || null;
+        if (!thumbnailUrl) {
+          const fileInput = document.getElementById('project-form-thumbnailFile');
+          if (fileInput?.files?.length && fileInput.files[0].type.startsWith('image/')) {
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = function () {
+              compressImageDataUrl(reader.result, THUMB_DATA_URL_MAX_BYTES)
+                .then(function (compressed) { saveProjectForm(id, name, null, compressed); })
+                .catch(function (err) { showToast(err && err.message ? err.message : 'Obraz za duży', 'error'); });
+            };
+            reader.readAsDataURL(file);
+            return;
+          }
+        }
       }
       saveProjectForm(id, name, thumbnailUrl, thumbnailDataUrl);
     });
@@ -1771,45 +1901,65 @@
         return;
       }
       const team = document.getElementById('project-form-team').value.trim();
-      const data = {
-        name,
-        team,
-        description: document.getElementById('project-form-description').value.trim(),
-        videoUrl: document.getElementById('project-form-videoUrl').value.trim() || null,
-        thumbnailUrl: thumbnailUrl || null,
-        thumbnailDataUrl: thumbnailDataUrl || null,
+      if (thumbnailDataUrl != null && thumbnailDataUrl.length > THUMB_DATA_URL_MAX_BYTES) {
+        showToast('Obraz jest za duży. Użyj mniejszego pliku lub URL.', 'error');
+        return;
+      }
+      const baseData = {
+        name: name || '',
+        team: team || '',
+        description: (document.getElementById('project-form-description').value || '').trim(),
+        videoUrl: (document.getElementById('project-form-videoUrl').value || '').trim() || null,
         teamToken: resolveTeamTokenForProject(id, team)
       };
-      if (id) {
-        if (db) {
-          db.collection('projects').doc(id).update(data).then(() => { showToast('Updated'); closeProjectFormModal(); loadAdminData(); }).catch(() => showToast('Failed', 'error'));
-        } else {
-          const proj = adminMockProjects.find(p => p.id === id);
-          if (proj) {
-            proj.name = data.name;
-            proj.team = data.team;
-            proj.description = data.description;
-            proj.videoUrl = data.videoUrl;
-            proj.thumbnailUrl = data.thumbnailUrl;
-            proj.thumbnailDataUrl = data.thumbnailDataUrl;
+      function doSave(docId, thumbUrl, thumbDataUrl, isNew) {
+        var data = Object.assign({}, baseData, {
+          thumbnailUrl: thumbUrl || null,
+          thumbnailDataUrl: thumbDataUrl || null
+        });
+        if (!isNew && docId) {
+          if (db) {
+            db.collection('projects').doc(docId).update(data).then(() => { showToast('Updated'); closeProjectFormModal(); loadAdminData(); }).catch(function (err) { showToast(err && err.message ? err.message : 'Failed', 'error'); });
+          } else {
+            var proj = adminMockProjects.find(function (p) { return p.id === docId; });
+            if (proj) {
+              proj.name = data.name;
+              proj.team = data.team;
+              proj.description = data.description;
+              proj.videoUrl = data.videoUrl;
+              proj.thumbnailUrl = data.thumbnailUrl;
+              proj.thumbnailDataUrl = data.thumbnailDataUrl;
+            }
+            showToast('Updated');
+            closeProjectFormModal();
+            loadAdminData();
           }
-          showToast('Updated');
-          closeProjectFormModal();
-          loadAdminData();
+          return;
         }
-      } else {
         if (db) {
-          db.collection('projects').add({ ...data, createdAt: firebase.firestore.FieldValue.serverTimestamp(), isActive: true }).then(() => { showToast('Project added'); closeProjectFormModal(); loadAdminData(); }).catch(() => showToast('Failed to add', 'error'));
+          var newId = docId || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
+          db.collection('projects').doc(newId).set(Object.assign({}, data, { createdAt: firebase.firestore.FieldValue.serverTimestamp(), isActive: true })).then(() => { showToast('Project added'); closeProjectFormModal(); loadAdminData(); }).catch(function (err) { showToast(err && err.message ? err.message : 'Failed to add', 'error'); });
         } else {
-          const newId = 'mock-' + Date.now();
-          adminMockProjects.push({ id: newId, ...data, isActive: true });
-          adminMockStats.voteCounts[newId] = 0;
-          adminMockStats.viewCounts[newId] = 0;
+          var mockId = 'mock-' + Date.now();
+          adminMockProjects.push({ id: mockId, ...data, isActive: true });
+          adminMockStats.voteCounts[mockId] = 0;
+          adminMockStats.viewCounts[mockId] = 0;
           showToast('Project added');
           closeProjectFormModal();
           loadAdminData();
         }
       }
+      var isNew = !id;
+      if (db && thumbnailDataUrl && typeof firebase !== 'undefined' && firebase.storage) {
+        var projectId = id || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
+        uploadThumbnailToStorage(projectId, thumbnailDataUrl)
+          .then(function (url) { doSave(projectId, url, null, isNew); })
+          .catch(function (err) {
+            showToast(err && err.message ? err.message : 'Upload miniatury nie powiódł się', 'error');
+          });
+        return;
+      }
+      doSave(id, thumbnailUrl, thumbnailDataUrl, isNew);
     }
   }
 

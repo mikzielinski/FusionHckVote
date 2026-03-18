@@ -71,16 +71,20 @@
         <input type="url" id="project-form-videoUrl" name="videoUrl" placeholder="https://..." />
         <fieldset class="thumbnail-fieldset">
           <legend>Thumbnail / banner</legend>
-          <div class="thumbnail-radios">
-            <label><input type="radio" id="project-form-thumb-type-url" name="thumbType" value="url" checked /> URL</label>
-            <label><input type="radio" id="project-form-thumb-type-file" name="thumbType" value="file" /> Upload file</label>
+          <div id="project-form-thumb-preview-wrap" class="thumbnail-preview-wrap" aria-hidden="true">
+            <img id="project-form-thumb-preview" class="thumbnail-preview-img" src="" alt="" />
           </div>
+          <div class="thumbnail-radios">
+            <label><input type="radio" id="project-form-thumb-type-url" name="thumbType" value="url" checked /> Adres URL obrazu</label>
+            <label><input type="radio" id="project-form-thumb-type-file" name="thumbType" value="file" /> Wgraj plik</label>
+          </div>
+          <p class="thumbnail-hint">Wgrany plik zostanie zapisany w Firebase Storage i podlinkowany w projekcie.</p>
           <div id="thumb-url-wrap" class="thumbnail-option">
-            <label for="project-form-thumbnailUrl">Image URL</label>
-            <input type="url" id="project-form-thumbnailUrl" name="thumbnailUrl" placeholder="https://..." />
+            <label for="project-form-thumbnailUrl">URL obrazu</label>
+            <input type="url" id="project-form-thumbnailUrl" name="thumbnailUrl" placeholder="https://... lub images/projects/nazwa.png" />
           </div>
           <div id="thumb-file-wrap" class="thumbnail-option" style="display: none;">
-            <label for="project-form-thumbnailFile">Choose image</label>
+            <label for="project-form-thumbnailFile">Wybierz obraz</label>
             <input type="file" id="project-form-thumbnailFile" name="thumbnailFile" accept="image/*" />
           </div>
           <input type="hidden" id="project-form-thumbnailDataUrl" name="thumbnailDataUrl" value="" />
@@ -95,6 +99,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
