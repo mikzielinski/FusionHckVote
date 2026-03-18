@@ -598,7 +598,7 @@
       .where('voterId', '==', voterId)
       .get()
       .then(snap => {
-        voteState.myVotes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        voteState.myVotes = snap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, MAX_VOTES);
         voteState.selected = new Set(voteState.myVotes.map(v => v.projectId));
       })
       .catch(() => {
@@ -629,7 +629,6 @@
     if (voteState.selected.has(projectId)) {
       voteState.selected.delete(projectId);
       renderVotePage();
-      removeVoteInFirestore(projectId);
       return;
     }
     if (voteState.selected.size >= MAX_VOTES) {
@@ -640,7 +639,6 @@
     document.getElementById('vote-warning')?.classList.remove('visible');
     voteState.selected.add(projectId);
     renderVotePage();
-    addVoteInFirestore(projectId);
   }
 
   function addVoteInFirestore(projectId) {
@@ -686,11 +684,83 @@
   }
 
   function submitVotes() {
+    const voterId = getVoterId();
     if (voteState.selected.size === 0) {
+      if (voteState.myVotes.length > 0) {
+        if (!confirm('Czy na pewno chcesz cofnąć głos? (Zostaniesz bez oddanego głosu.)')) return;
+        if (!db) {
+          if (!useLiveOnly) localStorage.setItem(MOCK_VOTES_KEY, '[]');
+          voteState.myVotes = [];
+          voteState.selected = new Set();
+          renderVotePage();
+          showToast('Głos cofnięty.', 'success');
+          return;
+        }
+        db.collection('votes')
+          .where('voterId', '==', voterId)
+          .get()
+          .then(snap => {
+            const batch = db.batch();
+            snap.docs.forEach(d => batch.delete(d.ref));
+            return batch.commit();
+          })
+          .then(() => loadMyVotes().then(() => {
+            renderVotePage();
+            showToast('Głos cofnięty.', 'success');
+          }))
+          .catch(() => showToast('Nie udało się cofnąć głosu.', 'error'));
+        return;
+      }
       showToast('Select one project to vote.', 'error');
       return;
     }
-    showToast('Vote saved. You can change it anytime.', 'success');
+    const projectId = [...voteState.selected][0];
+    const project = voteState.projects.find(p => p.id === projectId);
+    const projectName = (project ? (project.name || 'Unnamed') : 'this project').replace(/"/g, "'");
+    const currentVote = voteState.myVotes[0];
+    const isChange = currentVote && currentVote.projectId !== projectId;
+    let confirmMsg;
+    if (isChange) {
+      const currentProject = voteState.projects.find(p => p.id === currentVote.projectId);
+      const currentName = (currentProject ? (currentProject.name || 'Unnamed') : 'ten projekt').replace(/"/g, "'");
+      confirmMsg = 'Czy na pewno chcesz zmienić głos?\n\nObecny głos: „' + currentName + '"\nNowy wybór: „' + projectName + '"';
+    } else {
+      confirmMsg = 'Czy na pewno chcesz oddać głos na „' + projectName + '"';
+    }
+    if (!confirm(confirmMsg + '?')) return;
+    if (!db) {
+      if (!useLiveOnly) {
+        localStorage.setItem(MOCK_VOTES_KEY, JSON.stringify([...voteState.selected]));
+        showToast('Vote saved. You can change it anytime.', 'success');
+        showVoteFunAnimation();
+      } else showToast('Connect Firebase to save votes.', 'error');
+      return;
+    }
+    db.collection('votes')
+      .where('voterId', '==', voterId)
+      .get()
+      .then(snap => {
+        const batch = db.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        return batch.commit();
+      })
+      .then(() => {
+        return db.collection('votes').add({
+          voteId: 'vote_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+          projectId,
+          voterId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      })
+      .then(() => loadMyVotes().then(() => {
+        renderVotePage();
+        showVoteFunAnimation();
+        showToast('Głos oddany. Możesz go zmienić w każdej chwili.', 'success');
+      }))
+      .catch(() => {
+        loadMyVotes().then(() => renderVotePage());
+        showToast('Nie udało się zapisać głosu.', 'error');
+      });
   }
 
   function openVideoModal(url) {
@@ -795,7 +865,7 @@
           (votingClosed ? '<div class="vote-closed-banner"><p>' + escapeHtml(closedBanner.title) + '</p><p class="vote-closed-hint">' + escapeHtml(closedBanner.hint) + '</p>' + closedBannerAction + '</div>' : '') +
           '<h1>UiPath Fusion</h1>' +
           '<p class="subtitle">Public Choice Award</p>' +
-          '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Vote for 1 project. You can change your vote anytime.') + '</p>' +
+          '<p class="vote-instructions">' + (votingClosed ? 'You can view projects below.' : 'Click a project to select it, then click “Submit my votes” to cast your vote.') + '</p>' +
           (votingClosed ? '' : '<div class="' + counterClass + '" id="vote-counter">Votes used: ' + used + ' / ' + MAX_VOTES + '</div>') +
           (votingClosed ? '' : '<p class="vote-warning" id="vote-warning">You can vote for only 1 project. Remove current vote to choose another.</p>') +
         '</header>' +
@@ -804,7 +874,7 @@
         (votingClosed ? '' : '<div class="submit-votes-bar' + (used > 0 ? ' submit-votes-bar--has-votes' : '') + '" id="submit-votes-bar">' +
           '<div class="submit-votes-bar-inner">' +
             '<div class="submit-votes-counter" id="submit-votes-counter">Votes: ' + used + ' / ' + MAX_VOTES + '</div>' +
-            '<p class="submit-votes-cta">' + (used > 0 ? 'Tap below to confirm your vote' : 'Choose 1 project, then confirm') + '</p>' +
+            '<p class="submit-votes-cta">' + (used > 0 ? 'Tap below to confirm and cast your vote' : 'Choose 1 project above, then tap here to submit') + '</p>' +
             '<button type="button" class="btn btn-primary btn-submit-votes" id="submit-votes-btn">Submit my votes</button>' +
           '</div>' +
         '</div>') +
