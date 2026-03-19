@@ -892,7 +892,7 @@
       });
       list.addEventListener('click', e => {
         const card = e.target.closest('.project-card');
-        if (!card || card.classList.contains('disabled')) return;
+        if (!card) return;
         const watchBtn = e.target.closest('.watch-video');
         if (watchBtn) {
           e.preventDefault();
@@ -914,6 +914,7 @@
           e.stopPropagation();
           return;
         }
+        if (card.classList.contains('disabled')) return;
         const projectId = card.getAttribute('data-project-id');
         toggleVote(projectId);
       });
